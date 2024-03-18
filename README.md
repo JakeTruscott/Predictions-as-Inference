@@ -1,2 +1,2 @@
-# Prediction-as-Inference
-Predictions as Inference Package for R (Johnson, Strother, and Truscott)
+# PAI
+Predictions as Inference Package (R)
