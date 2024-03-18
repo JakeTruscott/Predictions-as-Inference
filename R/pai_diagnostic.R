@@ -1,17 +1,14 @@
-################################################################################
-# Prediction as Inference (PAI) Package - R
-# PAI Diagnostic Tool -- Parameter Guide in Supplemental Materials
-# Code Developed by Ben Johnson (UF), Logan Strother (Purdue), and Jake Truscott (Purdue)
-# Updated March 2024
-# Contact: jtruscot@purdue.edu
-################################################################################
-
-################################################################################
-#Load Packages
-################################################################################
-library(randomForest); library(doParallel); library(caret); library(parallel); library(rlist); library(dplyr); library(gridExtra); library(gridtext); library(grid); library(doSNOW); library(patchwork); library(stringr); library(cowplot); library(xgboost)
-
-
+#' PAI Diagnostic Tool
+#'
+#' @param pai_object A compiled PAI object obtained using pai_main().
+#' @param variables A defined list of variables to analyze.
+#' @param bins Numeric value of bins to assess predicted response across variance in the distribution of a variable; Default = 5
+#' @param bin_cut Numeric value of cut point between bins; Default = 5
+#'
+#' @return
+#' @export
+#'
+#' @examples
 pai_diagnostic <- function(pai_object = NULL,
                            variables = NULL,
                            bins = NULL,
@@ -33,10 +30,6 @@ pai_diagnostic <- function(pai_object = NULL,
 
     if (is.null(bin_cut)){
       bin_cut = 5
-    }
-
-    if (is.null(bins)){
-      bins = 1
     }
 
 

@@ -1,4 +1,4 @@
-#' PAI Function (Main)
+#' PAI Function
 #'
 #' @param data A structured dataset featuring a target variable of interest (y) along with independent variables(s) (x), providing a comprehensive framework for exploratory analysis and predictive modeling.
 #' @param outcome Target variable of interest (y); Can be distributed binomialy or continuously.
