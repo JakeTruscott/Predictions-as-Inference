@@ -223,7 +223,9 @@ pai_main <- function(data,
 
     ml_model <- parameters$ml_model
     placebo_iterations <- parameters$placebo_iterations
-    train.set <- round(length(dat[[outcome]])/5, 0)
+
+    train.set = round(nrow(dat)/5)
+
     outcome_var <- dat[outcome]
     cv_folds <- parameters$k_folds
 
@@ -302,9 +304,7 @@ pai_main <- function(data,
       for (variable in 1:length(combined_variables_list)){
         x = combined_variables_list[variable]
         Z = output_list$with.test
-        print(x)
         if (x %in% paste0('as.factor(', factor_vars, ')') || x == 'y' || is.factor(Z[,x])){
-          print('Skipping')
           next
         }  else{
           sdx <- sd(Z[,x])
@@ -629,8 +629,8 @@ pai_main <- function(data,
       } #Create DF for Train/Test Split
 
 
-      d.train <- d[seq(ntrain),] #Set Training Data
-      d.test <- d[-seq(ntrain),] # Set Testing Data
+      d.train <- d[-seq(ntrain),] #Set Training Data
+      d.test <- d[seq(ntrain),] # Set Testing Data
 
       {
 
@@ -642,7 +642,11 @@ pai_main <- function(data,
           if (as.numeric(temp_levels) == 1){
             single_level_cols <- c(single_level_cols, temp_col)
           }
-        }
+        } #Check if Insufficient Levels
+
+
+
+
 
         if (length(single_level_cols) > 0){
           message("         Note -- Removing Following Vars Due to Insufficient Levels in Test/Training Data: ", paste(single_level_cols, collapse = ", "))
@@ -653,9 +657,9 @@ pai_main <- function(data,
 
       } #Indicate Which Vars to Remove B/C Insufficient Levels in Factor Form
 
+
       d.train <- d.train[!names(d.train) %in% single_level_cols]
       d.test <- d.test[!names(d.test) %in% single_level_cols]
-
 
       {
 
@@ -705,31 +709,59 @@ pai_main <- function(data,
 
         combined_vars <- c()
 
-        if (!is.null(declared_factors)) {
-          combined_vars <- c(combined_vars, unlist(declared_factors))
-        }
-        if (!is.null(assigned_factors)) {
-          combined_vars <- c(combined_vars, unlist(assigned_factors))
-        }
-        if (!is.null(declared_interactions)) {
-          interaction_terms <- c()
-          for (i in 1:length(declared_interactions)){
-            terms <- unlist(stringr::str_split(declared_interactions[i], pattern = "\\:"))
-            factor_check <- c()
-            for (t in 1:length(terms)){
-              temp_term <- terms[t]
-              factor_check[t] <- ifelse(paste0('as.factor(', temp_term, ')') %in% combined_vars, paste0('as.factor(', temp_term, ')'), temp_term)
+        {
+          if (!is.null(declared_factors)) {
+            combined_vars <- c(combined_vars, unlist(declared_factors))
+          }
+          if (!is.null(assigned_factors)) {
+            combined_vars <- c(combined_vars, unlist(assigned_factors))
+          }
+          if (!is.null(declared_interactions)) {
+            interaction_terms <- c()
+            for (i in 1:length(declared_interactions)){
+              terms <- unlist(stringr::str_split(declared_interactions[i], pattern = "\\:"))
+              factor_check <- c()
+              for (t in 1:length(terms)){
+                temp_term <- terms[t]
+                factor_check[t] <- ifelse(paste0('as.factor(', temp_term, ')') %in% combined_vars, paste0('as.factor(', temp_term, ')'), temp_term)
+              }
+              interaction_terms <- c(interaction_terms, paste(factor_check, collapse = ":"))
             }
-            interaction_terms <- c(interaction_terms, paste(factor_check, collapse = ":"))
+
+            combined_vars <- c(combined_vars, interaction_terms)
           }
 
-          combined_vars <- c(combined_vars, interaction_terms)
-        }
+          combined_vars <- unique(combined_vars)
 
-        combined_vars <- unique(combined_vars)
+          single_level_to_toss <- c(single_level_cols, paste0('as.factor(', single_level_cols, ')'))
+          combined_vars <- combined_vars[!combined_vars %in% single_level_to_toss]
+        } #Assign Factors & Remove
 
-        single_level_to_toss <- c(single_level_cols, paste0('as.factor(', single_level_cols, ')'))
-        combined_vars <- combined_vars[!combined_vars %in% single_level_to_toss]
+        {
+
+          all_factors <- combined_vars[grepl('as.factor\\(', combined_vars)]
+          all_factors <- gsub('as\\.factor\\(', '', gsub('\\)', '', all_factors))
+          factors_to_toss <- c()
+
+          for (factor in all_factors){
+            test_levels <- length(unique(d.test[[factor]]))
+            train_levels <- length(unique(d.train[[factor]]))
+
+            if (!identical(test_levels, train_levels)) {
+              factors_to_toss <- c(factors_to_toss, factor)
+            }
+
+          }
+
+        } #Make Sure Levels Across Test/Train are the Same
+
+        if (length(factors_to_toss) > 0){
+          message("         Note -- Removing Following Vars Due to Insufficient Levels in Test/Training Data: ", paste(factors_to_toss, collapse = ", "))}
+
+        combined_vars <- combined_vars[!combined_vars %in% paste0('as.factor(', factors_to_toss, ')')]
+
+        d.test <- d.test[!names(d.test) %in% factors_to_toss]
+        d.train <- d.train[!names(d.train) %in% factors_to_toss]
 
         if(data_type == 'Binomial'){
           formula = paste0('as.factor(y) ~ ', paste(combined_vars, collapse = " + "))
@@ -742,6 +774,8 @@ pai_main <- function(data,
         list_of_vars <- combined_vars
 
       }  #Compile Formula for ML
+
+
 
 
       message("    Compiling Baseline ", parameters$ml_model, "...")
@@ -837,3 +871,4 @@ pai_main <- function(data,
 
 
 }
+

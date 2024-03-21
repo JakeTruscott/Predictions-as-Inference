@@ -63,7 +63,11 @@ sals <- unique(c(grep('salience', names(df)), grep('CLR', names(df)), grep('sal.
 output_directory <- "E:/PAI"
 model_types <- c('parRF', 'xgbTree')
 
-scotus_data <- scotus_data[1:3]
+already_completed <- list.files(output_directory)
+
+scotus_data <- scotus_data[!names(scotus_data) %in% already_completed]
+
+#scotus_data <- scotus_data[4:length(scotus_data)]
 
 for (i in 1:length(scotus_data)){
 
@@ -71,7 +75,7 @@ for (i in 1:length(scotus_data)){
 
   temp_justice <- names(scotus_data[i]) #Get Temp Justice
   start_message <- sprintf("\033[38;5;208mBeginning Process for \033[0m\033[38;5;15m%s\033[0m", temp_justice) #Compile Start Message
-  cat(start_message) #Print Start Message
+  cat(start_message, '\n') #Print Start Message
 
   justice_directory <- file.path(output_directory, temp_justice) #Create New Folder Directory for Justice
   if (!dir.exists(justice_directory)){
@@ -81,39 +85,37 @@ for (i in 1:length(scotus_data)){
 
   for (mt in model_types){
     output <- capture.output({
-      temp_pai <- pai_main(data = temp_data,
-                           outcome = 'direction',
-                           predictors = NULL,
-                           factors = NULL,
-                           assign_factors = c(TRUE, 4),
-                           interactions = NULL,
-                           list_drop_vars = TRUE,
-                           drop_vars = list(Mood = mood,
-                                            Issue = issues,
-                                            Amici = amicis,
-                                            Ideology = ideo,
-                                            `Lower Court` = lc,
-                                            `Judicial Review` = jr,
-                                            Lateral = lats),
-                           ml = c(mt, 8, 100, 5),
-                           custom_tc = F,
-                           seed = 1234)}) #Run PAI Process (Will Silence Output Text...)
+      suppressMessages(
+        suppressPackageStartupMessages(
+          temp_pai <- pai_main(data = temp_data,
+                               outcome = 'direction',
+                               predictors = NULL,
+                               factors = NULL,
+                               assign_factors = c(TRUE, 4),
+                               interactions = NULL,
+                               list_drop_vars = TRUE,
+                               drop_vars = list(Mood = mood,
+                                                Issue = issues,
+                                                Amici = amicis,
+                                                Ideology = ideo,
+                                                `Lower Court` = lc,
+                                                `Judicial Review` = jr,
+                                                Lateral = lats),
+                               ml = c(mt, 8, 100, 5),
+                               custom_tc = F,
+                               seed = 1234)))}) #Run PAI Process (Will Silence Output Text...)
 
 
-    model_level_directory <- file.path(justice_directory, mt) #Create Model-Level Directory Output
+    model_level_directory <- paste0(justice_directory, '/', paste0(temp_justice, "_", mt, '.rdata')) #Create Model-Level Directory Output
 
-    if (!dir.exists(model_level_directory)){
-      dir.create(model_level_directory)
-    } #Create Model-level Folder
-
-    save(temp_pai, model_level_directory) #Save to Folder
-    message('      ', mt, ' Completed...') #Print Update When Complete Each Model
+    save(temp_pai, file = model_level_directory) #Save to Folder
+    message('      ', mt, ' Completed...\n') #Print Update When Complete Each Model
 
 
   } #For mt in model_type
 
   end_message <- sprintf("\033[38;5;202mCompleted Process for \033[0m\033[38;5;15m%s\033[0m", temp_justice) #Compile End Message
-  cat(end_message) #Print End Message
+  cat(end_message, '\n') #Print End Message
 
 } #Main Function
 
