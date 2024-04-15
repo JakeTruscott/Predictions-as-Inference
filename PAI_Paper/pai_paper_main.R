@@ -8,7 +8,7 @@
 ################################################################################
 #Load Packages
 ################################################################################
-library(randomForest); library(doParallel); library(caret); library(parallel); library(rlist); library(dplyr); library(gridExtra); library(gridtext); library(grid); library(doSNOW); library(patchwork); library(stringr); library(cowplot); library(xgboost)
+library(randomForest); library(doParallel); library(caret); library(parallel); library(rlist); library(dplyr); library(gridExtra); library(gridtext); library(grid); library(doSNOW); library(patchwork); library(stringr); library(cowplot); library(xgboost); library(foreign)
 
 
 ################################################################################
@@ -18,6 +18,7 @@ library(randomForest); library(doParallel); library(caret); library(parallel); l
 
 dropbox <- "E:/Strother_Johnson/data" #Dropbox Directory
 load(file.path(dropbox, 'permutation-dfs.rdata')) #Load Permutations DF
+load(file.path(dropbox, 'Chapter3-Models/Cases-FullData.rdata')) #Load Permutations DF
 
 scotus_data <- list() #Initialize Empty List
 
@@ -35,7 +36,7 @@ for (i in 1:length(perms)){
 
 } #Put Data w/ Mood into Filtered List
 
-rm(list=setdiff(ls(), "scotus_data")) #Clean Global Env.
+rm(list=setdiff(ls(), c('scotus_data', 'info'))) #Clean Global Env.
 
 ################################################################################
 #Organize Mood & Other Info Into Groups
@@ -61,16 +62,25 @@ sals <- unique(c(grep('salience', names(df)), grep('CLR', names(df)), grep('sal.
 ################################################################################
 
 output_directory <- "E:/PAI"
-model_types <- c('parRF', 'xgbTree')
+model_types <- c('parRF', 'xgbTree', 'adaboost')
+
+################################################################################
+#Run PAI Estimates on SCOTUS Data
+################################################################################
 
 already_completed <- list.files(output_directory)
 
 scotus_data <- scotus_data[!names(scotus_data) %in% already_completed]
 
-#scotus_data <- scotus_data[4:length(scotus_data)]
+scotus_data <- info$modlist$with.dat
+
+scotus_data <- bind_rows(scotus_data$test, scotus_data$train)
+
+scotus_data <- list('Cases' = scotus_data)
 
 for (i in 1:length(scotus_data)){
 
+  #temp_data <- scotus_data[[i]]
   temp_data <- scotus_data[[i]]
 
   temp_justice <- names(scotus_data[i]) #Get Temp Justice
@@ -84,6 +94,14 @@ for (i in 1:length(scotus_data)){
 
 
   for (mt in model_types){
+
+    model_level_directory <- paste0(justice_directory, '/', paste0(temp_justice, "_", mt, '.rdata')) #Create Model-Level Directory Output
+
+    if(file.exists(model_level_directory)){
+      message('      ', mt, ' Already Completed...\n')
+      next
+      } #Skip If Model Completed in Earlier Iterations
+
     output <- capture.output({
       suppressMessages(
         suppressPackageStartupMessages(
@@ -120,11 +138,26 @@ for (i in 1:length(scotus_data)){
 } #Main Function
 
 
+################################################################################
+# Hainmueller Replication
+################################################################################
+
+path = "C:/Users/Jake Truscott/Documents/GitHub/Prediction-as-Inference/PAI_Paper/hainmueller_replication"
+aklin <- na.omit(read.dta(file.path(path,"Data/Aklin_AJPS_2013/rep_aklin_2013.dta")))
+
+aklin_test <- pai_main(data = aklin,
+                       outcome = 'drenew_capacity_nh_share',
+                       predictors = c('left_to_right', 'right_to_left', 'linnovation_x_oil', 'oilcrude_price2007dollar_bp', 'lrenewpc', 'left_executive', 'rigth_executive', 'election_year', 'renewablecapacity_3yr_average', 'hydronuclear_3yr', 'year', 'traditional_electricity_share', 'year_dummy'),
+                       factors = NULL,
+                       assign_factors = c(TRUE, 4),
+                       interactions = NULL,
+                       list_drop_vars = FALSE,
+                       drop_vars = NULL,
+                       ml = c('parRF', 5, 100, 5),
+                       custom_tc = F,
+                       seed = 1234)
 
 
+diagnostic_test <- pai_diagnostic(pai_object = aklin_test)
 
-
-
-
-
-
+diagnostic_test$figures$placebo

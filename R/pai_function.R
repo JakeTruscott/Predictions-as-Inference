@@ -214,55 +214,69 @@ pai_main <- function(data,
     } #Introduce Declared Interactions (If Any)
 
 
-    dcols <- which(apply(dat, 2, function(x) length(unique(x)))==1)
-    dcols2 <- which(apply(dat, 2, function(x) length(levels(as.factor(x))) == 1))
-    dcols <- unique(dcols, dcols2)
-    if (length(dcols) >0)  dat <- dat[,-dcols]
+    {
+
+      dcols <- which(apply(dat, 2, function(x) length(unique(x)))==1)
+      dcols2 <- which(apply(dat, 2, function(x) length(levels(as.factor(x))) == 1))
+      dcols <- unique(dcols, dcols2)
+      if (length(dcols) >0)  dat <- dat[,-dcols]
+
+    } # First Attempt to Remove Cols w/ Sparse Data Problems
 
     pai_output <- list() #Declare List Object to Store Outputs
 
-    ml_model <- parameters$ml_model
-    placebo_iterations <- parameters$placebo_iterations
 
-    train.set = round(nrow(dat)/5)
+    {
 
-    outcome_var <- dat[outcome]
-    cv_folds <- parameters$k_folds
+      ml_model <- parameters$ml_model #Set ML Model
+      placebo_iterations <- parameters$placebo_iterations #Set Placebo Iterations
+      train.set = round(nrow(dat)/5) #Set Train Set Size
+      outcome_var <- dat[outcome] #Set Outcome Var
+      cv_folds <- parameters$k_folds #Set CV Fodls
 
-    if (parameters$custom_tc == 'FALSE'){
-      tc_main <- trainControl(method = 'repeatedcv',
-                              number = cv_folds,
-                              repeats = 3,
-                              savePredictions = TRUE)
-    } else {
+    } # Additional Variable Declaration...
 
-      custom_params <- data.frame(custom_declare = strsplit(custom_tc, ', ')[[1]])
+    {
 
-      tc <- list()
+      if (parameters$custom_tc == 'FALSE'){
+        tc_main <- trainControl(method = 'repeatedcv',
+                                number = cv_folds,
+                                repeats = 3,
+                                savePredictions = TRUE)
+      } else {
 
-      tc_names <- names(trainControl())
+        custom_params <- data.frame(custom_declare = strsplit(custom_tc, ', ')[[1]])
+
+        tc <- list()
+
+        tc_names <- names(trainControl())
 
 
-      custom_params <- custom_params %>%
-        mutate(param = gsub('\\=.*', '', custom_declare),
-               value = gsub('.*\\=', '', custom_declare)) %>%
-        mutate(param = gsub('\\s+', '', param),
-               value = gsub('\\s+', '', value)) %>%
-        select(param, value) %>%
-        filter(param %in% tc_names)
+        custom_params <- custom_params %>%
+          mutate(param = gsub('\\=.*', '', custom_declare),
+                 value = gsub('.*\\=', '', custom_declare)) %>%
+          mutate(param = gsub('\\s+', '', param),
+                 value = gsub('\\s+', '', value)) %>%
+          select(param, value) %>%
+          filter(param %in% tc_names)
 
-      tc_params <- list()
+        tc_params <- list()
 
-      for (i in 1:nrow(custom_params)) {
-        param_name <- custom_params$param[i]
-        param_value <- eval(parse(text = custom_params$value[i]))
-        tc_params[[param_name]] <- param_value
+        for (i in 1:nrow(custom_params)) {
+          param_name <- custom_params$param[i]
+          param_value <- eval(parse(text = custom_params$value[i]))
+          tc_params[[param_name]] <- param_value
+        }
+
+        tc_main <- do.call(trainControl, tc_params)
+
+
       }
 
-      tc_main <- do.call(trainControl, tc_params)
+
+    } # Train Parameters - Custom (If Declared)
 
 
-    }
 
 
   } #Assign Additional Params for Functions
@@ -583,7 +597,7 @@ pai_main <- function(data,
           dropped_var = drop_combinations$dropped_var[c]
 
           capture_output_mod.with <- capture.output({ mod.without_var <- suppressWarnings( train(form = as.formula(combination),
-                                                                                                 data = d.test,
+                                                                                                 data = d.train,
                                                                                                  metric = ifelse(parameters$data_type == 'Continuous', 'RMSE', 'Accuracy'),
                                                                                                  method = as.character(parameters$ml_model),
                                                                                                  trControl = tc_main)
@@ -741,16 +755,19 @@ pai_main <- function(data,
 
           all_factors <- combined_vars[grepl('as.factor\\(', combined_vars)]
           all_factors <- gsub('as\\.factor\\(', '', gsub('\\)', '', all_factors))
+
           factors_to_toss <- c()
 
-          for (factor in all_factors){
-            test_levels <- length(unique(d.test[[factor]]))
-            train_levels <- length(unique(d.train[[factor]]))
+          for (factor in all_factors) {
+            test_levels <- unique(d.test[[factor]])
+            train_levels <- unique(d.train[[factor]])
 
-            if (!identical(test_levels, train_levels)) {
+            # Check for levels in test but not in train
+            extra_levels <- setdiff(test_levels, train_levels)
+
+            if (length(extra_levels) > 0) {
               factors_to_toss <- c(factors_to_toss, factor)
             }
-
           }
 
         } #Make Sure Levels Across Test/Train are the Same
@@ -774,9 +791,6 @@ pai_main <- function(data,
         list_of_vars <- combined_vars
 
       }  #Compile Formula for ML
-
-
-
 
       message("    Compiling Baseline ", parameters$ml_model, "...")
 
@@ -812,10 +826,15 @@ pai_main <- function(data,
         )
       }) #Get Basic RF
 
+
       placebo_base <- placebo_shuffle(w = mod.with,
                                       d.train = d.train,
                                       d.test = d.test,
-                                      combined_variables_list = ifelse(parameters$list_drop_vars == 'TRUE', list(parameters$drop_vars), combined_vars)) #Initialize Placebo_Shuffle
+                                      combined_variables_list <- if (parameters$list_drop_vars == 'TRUE') {
+                                        list(parameters$drop_vars)
+                                      } else {
+                                        combined_vars[!grepl('as.factor', combined_vars)]
+                                      }) #Initialize Placebo_Shuffle
 
       placebo <- placebo_base %>%
         select(-rep_count) %>%
@@ -826,7 +845,11 @@ pai_main <- function(data,
 
       fit_change <- dropping_vars(mod.with = mod.with,
                                   d.train = d.train,
-                                  combined_variables_list = ifelse(parameters$list_drop_vars == 'TRUE', list(parameters$drop_vars), combined_vars)) #Initialize Dropping_Vars
+                                  combined_variables_list <- if (parameters$list_drop_vars == 'TRUE') {
+                                    list(parameters$drop_vars)
+                                  } else {
+                                    combined_vars[!grepl('as.factor', combined_vars)]
+                                  }) #Initialize Dropping_Vars
 
 
       fit_assess <- left_join(fit_change, placebo, by = 'var') #Join Fit Changes by Dropped Var ('var')
@@ -871,4 +894,3 @@ pai_main <- function(data,
 
 
 }
-
