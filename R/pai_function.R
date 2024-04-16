@@ -187,7 +187,7 @@ pai_main <- function(data,
     data_type = parameters$data_type
 
     dat <- data %>%
-      dplyr::select(any_of(c(outcome, unlist(parameters$predictors))))
+      dplyr::select(any_of(c(outcome, unlist(parameters$predictors), unlist(str_split(parameters$interactions, pattern = ':')))))
 
     declared_interactions <- c()
     {
@@ -306,6 +306,7 @@ pai_main <- function(data,
     push <- function(output_list){
 
       combined_variables_list <- unique(output_list$var)
+      combined_variables_list <- combined_variables_list[!grepl(':', combined_variables_list)]
 
       message("    Beginning Push Protocol...")
 
@@ -633,7 +634,6 @@ pai_main <- function(data,
       set.seed(seed) #Set Random Seed
 
       registerDoParallel(as.numeric(parameters$cores)) #Register Parallel Environment
-      #full_dat = dat
 
       d <- full_dat[!names(full_dat) %in% names(outcome_var)]
       d <- cbind(y, d)
