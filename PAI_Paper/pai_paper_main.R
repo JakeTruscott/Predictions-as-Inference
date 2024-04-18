@@ -142,7 +142,30 @@ for (i in 1:length(scotus_data)){
 # Hainmueller Replication
 ################################################################################
 
-path = "C:/Users/Jake Truscott/Documents/GitHub/Prediction-as-Inference/PAI_Paper/hainmueller_replication"
+rep_path = "C:/Users/Jake Truscott/OneDrive - purdue.edu/Active Research/SJT_R_Package/Paper Materials/Hainmueller_Replication/Replication/Code"
+
+rep_files <- list.files(rep_path, full.names = T)
+rep_files <- rep_files[grepl('rep\\_', rep_files)]
+rep_files <- rep_files[!rep_files %in% c('rep_bodea_io_2015', 'rep_clark_2006', 'rep_clark_2014', 'rep_hellwig_2007', 'rep_pelc_2011', 'rep_williams_2011', 'rep_chapman_2009')]
+
+hainmueller_params <- list()
+
+for (i in 1:length(rep_files)){
+
+  temp_file <- readLines(rep_files[i])
+  temp_file <- gsub('"', "'", temp_file)
+
+  temp_params <- list()
+  temp_params['data'] <- grep("^d<-", temp_file, value = TRUE)
+  temp_params['y'] = grep("^Y=", temp_file, value = TRUE)
+
+  temp_params
+
+
+}
+
+
+
 aklin <- na.omit(read.dta(file.path(path,"Data/Aklin_AJPS_2013/rep_aklin_2013.dta")))
 
 aklin_test <- pai_main(data = aklin,
