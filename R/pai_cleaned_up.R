@@ -9,48 +9,9 @@
 
 '
 
-pai <- function(data, #Data
-                model = NULL, #Caret Model
-                outcome = NULL, #DV
-                predictors = NULL, #IVs
-                interactions = NULL, #Interactive Terms
-                drop_vars = NULL, #Defaults to All
-                cores = NULL, #Defaults to 1
-                placebo_iterations = NULL, #Defaults to 10
-                folds = NULL, #Defaults to 5
-                train_split = 0.8, #Defaults to 80/20
-                custom_tc = FALSE,
-                assign_factors = FALSE, #Defaults to FALSE - Change to TRUE (4) or Any Number
-                list_drop_vars = FALSE, #Defaults to FALSE
-                seed = 1234 #Defaults to 1234
-                ){
-
-  start_time <- Sys.time()
-
-  message("-------------------------------------------------------------------")
-  cat("---------------------- Beginning PAI Process ----------------------\n")
-  message("-------------------------------------------------------------------")
-
-
-
-predictors <- c('var1', 'var2', 'var3', 'var4', 'var5', 'var6')
-parameters['predictors'] <- list(predictors)
-interactions <- c('var1:var2')
-parameters['interactions'] <- list(interactions)
-
-  end_time <- Sys.time()
-  completion_time_seconds <- difftime(end_time, start_time, units = "secs")
-  completion_time_minutes <- as.numeric(completion_time_seconds) / 60
-
-  message("-------------------------------------------------------------------")
-  cat("-------------------------- PAI  Complete --------------------------\n")
-  message("-------------------------------------------------------------------")
-  message('Completion Time = ', completion_time_minutes, ' Minutes')
-
-
-
-
-}
+require(caret)
+require(dplyr)
+require(stringr)
 
 data <- data.frame(
   var1 = sample(0:1, 100, replace = TRUE),
@@ -62,6 +23,57 @@ data <- data.frame(
 
 )
 
+outcome = 'var1'
+predictors = NULL
+model = 'parRF'
+interactions = c('var2:var3', 'var4*var5')
+drop_vars = NULL
+cores = 1
+placebo_iterations = 10
+folds = NULL
+train_split = 0.8
+custom_tc = FALSE
+assign_factors = NULL
+list_drop_vars = FALSE
+seed = 1234
+
+
+pai <- function(data, #Data
+                model = NULL, #Caret Model
+                outcome = NULL, #DV
+                predictors = NULL, #IVs
+                interactions = NULL, #Interactive Terms
+                drop_vars = NULL, #Defaults to All
+                cores = NULL, #Defaults to 1
+                placebo_iterations = NULL, #Defaults to 10
+                folds = NULL, #Defaults to 5
+                train_split = 0.8, #Defaults to 80/20
+                custom_tc = FALSE,
+                assign_factors = 3, #Defaults to 3 - Change to Any Number
+                list_drop_vars = FALSE, #Defaults to FALSE
+                seed = 1234 #Defaults to 1234
+                ){
+
+  start_time <- Sys.time() #Start Time
+  message("\033[34m-------------------------------------------------------------------\033[0m\n",
+          "\033[32m---------------------- Beginning PAI Process ----------------------\033[0m\n",
+          "\033[34m-------------------------------------------------------------------\033[0m\n") #Start Message
+
+
+
+  end_time <- Sys.time() #End Time
+  completion_time_minutes<- as.numeric((difftime(end_time, start_time, units = "secs")/60)) #Completion Time
+  message("\033[34m-------------------------------------------------------------------\033[0m\n",
+          "\033[32m-------------------------- PAI  Complete --------------------------\033[0m\n",
+          "\033[34m-------------------------------------------------------------------\033[0m\n") #Completion Message
+  message('\033[32mCompletion Time = ', round(completion_time_minutes,2), ' Minutes \033[0m') #Print Completion Time
+
+
+
+
+}
+
+
 
 pai_params_wrapper <- function(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed){
 
@@ -70,81 +82,82 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
     parameters <- list()
 
     if (is.null(model)){
-      parameters['model'] <- 'parRF'
+      parameters[['model']] <- 'parRF'
     } else {
-      parameters['model'] <- model
+      parameters[['model']] <- model
     } #Declare Model from Caret
 
     if (is.null(outcome)){
       stop('No Outcome Variable Declared \n Try Again')
     } else {
-      parameters['outcome'] <- outcome
+      parameters[['outcome']] <- outcome
     } # Declare Outcome (DV)
 
     if (is.null(predictors)){
-      parameters['predictors'] <- c(names(data)[!names(data) %in% parameters['outcome']])
+      parameters[['predictors']] <- c(names(data)[!names(data) %in% parameters[['outcome']]])
     } else {
-      parameters['predictors'] <- list(predictors)
+      parameters[['predictors']] <- list(predictors)
     } # Declare Predictors
 
     if (is.null(interactions)){
-      parameters['interactions'] <- 'None'
+      parameters[['interactions']] <- 'None'
     } else {
-      parameters['interactions'] <- list(interactions)
+      parameters[['interactions']] <- c(interactions)
     } #Declare Interaction Terms
 
     if (is.null(drop_vars)){
-      parameters['drop_vars'] <- parameters[['predictors']]
+      parameters[['drop_vars']] <- parameters[['predictors']]
     } else {
-      parameters['drop_vars'] <- list(drop_vars)
+      parameters[['drop_vars']] <- c(drop_vars)
     } # Declare Variables to Drop
 
     if (is.null(cores)){
-      parameters['cores'] <- 1
+      parameters[['cores']] <- 1
     } else {
-      parameters['cores'] <- as.numeric(cores)
+      parameters[['cores']] <- as.numeric(cores)
     } #Cores
 
     if (is.null(placebo_iterations)){
-      parameters['placebo_iterations'] <- 10
+      parameters[['placebo_iterations']] <- 10
     } else {
-      parameters['placebo_iterations'] <- as.numeric(placebo_iterations)
+      parameters[['placebo_iterations']] <- as.numeric(placebo_iterations)
     } #Placebo Iterations
 
     if (is.null(folds)){
-      paramters['folds'] <- 5
+      parameters[['folds']] <- 5
     } else {
-      paramters['folds'] <- as.numeric(folds)
+      parameters[['folds']] <- as.numeric(folds)
     } #K-Folds
 
     if (is.null(train_split)){
-      parameters['train_split'] <- 80
+      parameters[['train_split']] <- 80
     } else {
-      parameters['train_split'] <- as.numeric(train_split)
+      parameters[['train_split']] <- as.numeric(train_split)
     } # Train/Test Split
 
     if (custom_tc == FALSE){
-      parameters['custom_tc'] <- 'FALSE'
+      parameters[['custom_tc']] <- 'FALSE'
     } else {
-      parameters['custom_tc'] <- 'TRUE'
+      parameters[['custom_tc']] <- 'TRUE'
     } #Custom Train Control
 
-    if (assign_factors == FALSE){
-      paramters['assign_factors'] <- 'FALSE'
+    if (is.null(assign_factors)){
+      parameters[['assign_factors']] <- 4
     } else {
-      parameters['assign_factors'] <- as.numeric(assign_factors)
-    } #Assign Factor Breaks (Highly Recommend...)
+      parameters[['assign_factors']] <- as.numeric(assign_factors)
+    } #Assign Factor Floor (Default to 4)
+
 
     if (list_drop_vars == FALSE){
-      parameters['list_drop_vars'] <- 'FALSE'
+      parameters[['list_drop_vars']] <- 'FALSE'
     } else {
-      parameters['list_drop_vars'] <- 'TRUE'
+      parameters[['list_drop_vars']] <- 'TRUE'
     } # Drop Vars Grouped in List of Objects
 
     if (seed == 1234){
-      parameters['seed'] <- 1234
+      parameters[['seed']] <- 1234
     } else {
-      parameters['seed'] <- as.numeric(seed)
+      parameters[['seed']] <- as.numeric(seed)
     } #Seed
 
   } #Parameter Declaration
@@ -153,8 +166,8 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
     {
 
       if (parameters$custom_tc == 'FALSE'){
-        parameters['train_control'] <- trainControl(method = 'repeatedcv',
-                                number = cv_folds,
+        parameters[['train_control']] <- trainControl(method = 'repeatedcv',
+                                number = 5,
                                 repeats = 3,
                                 savePredictions = TRUE)
       } else {
@@ -181,7 +194,7 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
           tc_params[[param_name]] <- param_value
         }
 
-        parameters['train_control'] <- do.call(trainControl, tc_params)
+        parameters[['train_control']] <- do.call(trainControl, tc_params)
 
 
       }
@@ -195,14 +208,14 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
 
     {
 
-      if (parameters$interactions == 'None'){
+      if (parameters$interactions[1] == 'None'){
         combined_vars <- unique(parameters$predictors)
       } else {
         combined_vars <- unique(c(unique(unlist(stringr::str_split(parameters$interactions, pattern = "\\*|\\:"))), unique(parameters$predictors)))
       } #Get All Vars
 
       full_data <-  data %>%
-        dplyr::select(any_of(unlist(combined_vars))) #Get Full Data
+        dplyr::select(parameters$outcome, any_of(unlist(combined_vars))) #Get Full Data
 
       parameters['full_data'] <- list(full_data)
 
@@ -210,52 +223,163 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
 
     {
 
-      train_index <- createDataPartition(y = full_data[[outcome]], p = 0.8, list = F) #Create Partition Index
+      train_index <- createDataPartition(y = full_data[[parameters[['outcome']]]], p = 0.8, list = F) #Create Partition Index
 
       train_set <- full_data[train_index, ] #Split Train
       test_set <- full_data[-train_index, ] #Split Test
 
-      parameters['train_index'] <- train_index
-      parameters['train_set'] <- list(train_set)
-      parameters['test_set'] <- list(test_set)
+      parameters[['train_index']] <- train_index
+      parameters[['train_set']] <- list(train_set)
+      parameters[['test_set']] <- list(test_set)
 
     } # Test-Train Split
 
     {
 
-      formula_vars <- c()
+      formula_vars <- c() #Create Empty Object for Formula Vars
 
-      if (parameters$interactions == 'None'){
-        formula_vars <- formula_vars
-      } else {
-        formula_vars <- c(formula_vars, unlist(parameters$interactions))
+      sparse_check <- sparse_variable_check(parameters) #Check Sparse Nature & Assign Factor
+
+      non_factors <- unname(unlist(sparse_check['non-factors'])) #Get Non-Factors
+      factors <- unname(unlist(sparse_check['factors'])) #Get Factors
+      dv <- unname(sparse_check['outcome'][1]) #Get DV
+      factors <- factors[!factors %in% dv] #Remove DV
+
+      parameters['non_factors'] <- list(non_factors) #Put Non-Factors in parameters
+      parameters['factors'] <- list(factors) #Same for factors
+
+      factors <- paste0('factor(', factors, ')') #Add 'as.factor' to factors
+
+      formula_vars <- c(non_factors, factors) #Create Single Formula Vars (No Interactions Yet...)
+
+      if (parameters['interactions'] == 'None') {
+          formula_vars <- formula_vars #If No Interactions, Skip
+        } else {
+
+        formula_interactions <- c()
+
+        interactions <- unlist(parameters$interactions)
+
+        for (i in 1:length(interactions)){
+
+          temp_interaction <- interactions[i]
+          temp_interaction_vars <- unlist(stringr::str_split(temp_interaction, pattern = "[*|:]"))
+
+          if (any(temp_interaction_vars %in% sparse_check$sparse_factors)) {
+            sparse_check$sparse_factors <- c(sparse_check$sparse_factors, temp_interaction)
+            next
+          } #Check if Interaction Var is Sparse (If Yes, Toss and Move oN)
+
+          temp_interaction_checked <- c()
+
+          for (interaction_var in temp_interaction_vars){
+
+            if (interaction_var %in% sparse_check$factors){
+              checked_interaction_var <- paste0('factor(', interaction_var, ')')
+              temp_interaction_checked <- c(temp_interaction_checked, checked_interaction_var)
+            } else {
+              temp_interaction_checked <- c(temp_interaction_checked, interaction_var)
+            }
+
+          }
+
+          temp_interaction_checked <- paste(temp_interaction_checked, collapse = ":")
+
+          formula_interactions <- c(formula_interactions, temp_interaction_checked)
+
+        }
+
+        formula_vars <- c(formula_vars, formula_interactions)
+
+      } #Check if Interactions Are Sparse or Factor
+
+
+
+
+
+
+
+
+    } # Get Formula Vars
+
+    {
+      if (!is.null(sparse_check$sparse_factors)) {
+        message("\033[31m", "NOTICE: ", paste(paste0('(', sparse_check$sparse_factors, ')'), collapse = " & "), " Dropped Due to Sparse Data Variance in Train/Test Data... \033[0m\n", 'Advise: Might Consider Changing Test/Train Split')
       }
 
+    formula <- paste0(dv, '~', paste(formula_vars, collapse = "+"))
+
+    parameters[['base_formula']] <- formula
 
 
+    } #Create Formula (+ Message for What Was Tossed b/c Sparse)
 
 
-    } #Create Formula
 
 
   } #Create Data, Test/Train Split & Formula -- Remove Sparse Vars
 
-
-
 }
 
+sparse_variable_check <- function(parameters){
+
+  data = parameters$full_data
+  dv = parameters$outcome
+  variables = unlist(parameters$predictors)
+  test_data = parameters$test_set[[1]]
+  train_data = parameters$train_set[[1]]
+  factor_level_min = parameters$assign_factors
+
+  factor_variables <- c() #Initialize Empty Object for Factor Vars
+
+  for (var in c(variables, dv)){
+    temp_variable <- c(data[[var]])
+    temp_levels <- as.numeric(length(unique(temp_variable)))
+
+    if (temp_levels <= as.numeric(factor_level_min)){
+      factor_variables <- c(factor_variables, var)
+    } else {
+      next
+    }
+
+  } #Check If Factor (4 or Less Unique Values)
+
+  sparse_factors <- c()
+
+  for (factor in factor_variables){
+
+    levels_test <- test_data[[factor]] #Grab Variable from Test
+    levels_test <- sort(unique(levels_test)) #Get Unique Vars
+    levels_train <- train_data[[factor]] #Same for Train
+    levels_train <- sort(unique(levels_train))
+
+    if (all(levels_test %in% levels_train) && all(levels_train %in% levels_test)){
+      next
+    } else {
+      sparse_factors <- c(sparse_factors, factor)
+    }
+
+  } #Check if any factors are Sparse
+
+  remaining_factors <- factor_variables[!factor_variables %in% c(sparse_factors)]
+
+  sparse_check <- list()
+  sparse_check[['outcome']] <- dv
+  sparse_check[['non-factors']] <- c(variables[!variables %in% factor_variables])
+  sparse_check[['factors']] <- c(remaining_factors)
+  if (is.null(sparse_factors)){
+    sparse_check[['sparse_factors']] <- NULL
+  } else {
+    sparse_check['sparse_factors'] <- c(sparse_factors)
+  }
+
+  return(sparse_check) #Return List w/ Factors & Sparse Factors
+
+} #Check Sparse Factors & Assign as.factor() to Factors for Formula
 
 
 
-test <- "y ~ var1 + var2 + var1:var2"
-as.formula(test)
 
-
-
-
-
-
-interactions <- 'var1:var2'
 
 
 
