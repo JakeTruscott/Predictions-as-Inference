@@ -13,16 +13,17 @@ require(caret)
 require(dplyr)
 require(stringr)
 
-data <- data.frame(
+sandbox_data <- data.frame(
   var1 = sample(0:1, 100, replace = TRUE),
   var2 = runif(100, min = 0, max = 1),
-  var3 = sample(0:1, 100, replace = TRUE),
+  var3 = c(sample(0:1, 99, replace = TRUE), 2),
   var4 = runif(100, min = 0, max = 1),
   var5 = sample(0:1, 100, replace = TRUE),
   var6 = runif(100, min = 0, max = 1)
 
 )
 
+data = sandbox_data
 outcome = 'var1'
 predictors = NULL
 model = 'parRF'
@@ -54,10 +55,15 @@ pai <- function(data, #Data
                 seed = 1234 #Defaults to 1234
                 ){
 
+
   start_time <- Sys.time() #Start Time
   message("\033[34m-------------------------------------------------------------------\033[0m\n",
           "\033[32m---------------------- Beginning PAI Process ----------------------\033[0m\n",
           "\033[34m-------------------------------------------------------------------\033[0m\n") #Start Message
+
+  parameters <- pai_params_wrapper(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed)
+
+
 
 
 
@@ -80,6 +86,11 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
   {
 
     parameters <- list()
+
+    if(is.null(data)){
+      message("\033[31m Error: No Data Declared! \033[0m")
+      stop()
+    }
 
     if (is.null(model)){
       parameters[['model']] <- 'parRF'
@@ -163,6 +174,7 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
   } #Parameter Declaration
 
   {
+
     {
 
       if (parameters$custom_tc == 'FALSE'){
@@ -202,7 +214,20 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
 
     } # Train Parameters - Custom (If Declared)
 
-  } # Other Params (Custom Train Control)
+    {
+
+      outcome_type <- data[parameters[['outcome']]]
+      outcome_levels <- if(length(unique(outcome_type)) > 2){
+        outcome_type = 'Continuous'
+      } else {
+        outcome_type = 'Binomial'
+      }
+      parameters[['outcome_type']] = outcome_type
+
+
+    } #Assign DV Type (Binomial or Continuous)
+
+  } # Other Params (Custom Train Control) + Assingn DV Type
 
   {
 
@@ -247,6 +272,7 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
 
       parameters['non_factors'] <- list(non_factors) #Put Non-Factors in parameters
       parameters['factors'] <- list(factors) #Same for factors
+      parameters['sparse_factors'] <- list(sparse_factors)
 
       factors <- paste0('factor(', factors, ')') #Add 'as.factor' to factors
 
@@ -293,6 +319,9 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
 
       } #Check if Interactions Are Sparse or Factor
 
+      if (!is.null(sparse_check$sparse_factors)) {
+        parameters$sparse_factors <- sparse_check$sparse_factors
+      } #Update Sparse Factors (If Needed)
 
 
 
@@ -303,9 +332,7 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
     } # Get Formula Vars
 
     {
-      if (!is.null(sparse_check$sparse_factors)) {
-        message("\033[31m", "NOTICE: ", paste(paste0('(', sparse_check$sparse_factors, ')'), collapse = " & "), " Dropped Due to Sparse Data Variance in Train/Test Data... \033[0m\n", 'Advise: Might Consider Changing Test/Train Split')
-      }
+
 
     formula <- paste0(dv, '~', paste(formula_vars, collapse = "+"))
 
@@ -316,8 +343,9 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
 
 
 
-
   } #Create Data, Test/Train Split & Formula -- Remove Sparse Vars
+
+  return(parameters)
 
 }
 
@@ -377,7 +405,23 @@ sparse_variable_check <- function(parameters){
 
 } #Check Sparse Factors & Assign as.factor() to Factors for Formula
 
+print_parameters <- function(parameters){
 
+  message("\033[32m Model: \033[0m", "\033[33m", parameters$model, "\033[0m \n",
+          "\033[32m Outcome Variable: \033[0m", "\033[33m", parameters$outcome , "\033[0m \n",
+          "\033[32m Predictors: \033[0m", "\033[33m " , ifelse(length(unique(parameters$predictors) < 10), paste(parameters$predictors, collapse = " "), length(unique(parameters$predictors))), " \033[0m \n",
+          "\033[32m Interaction(s): \033[0m", "\033[33m", ifelse(is.null(parameters[['interactions']]), "None", paste(paste0('(', unlist(parameters$interactions), ')'), collapse = " ")), "\033[0m \n",
+    "\033[32m Variables to Drop: \033[0m", "\033[33m", ifelse(all(parameters$predictors %in% parameters$drop_vars), "All Predictors", unlist(parameters$drop_vars)), " \033[0m \n",
+    "\033[32m Train/Test Split: \033[0m", "\033[33m", (parameters$train_split)*100, "/", 100-((parameters$train_split)*100), "\033[0m \n",
+    "\033[32m Vars Dropped Due to Sparse Variance in Train/Test: \033[0m", "\033[33m", ifelse(is.null(parameters$sparse_factors), 'None', paste(unlist(paste0('(', parameters$sparse_factors, ')')), collapse = " ")), "\033[0m \n")
+
+
+}
+
+declared_model <- function(parameters){
+
+
+}
 
 
 
