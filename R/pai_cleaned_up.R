@@ -61,11 +61,17 @@ pai <- function(data, #Data
           "\033[32m---------------------- Beginning PAI Process ----------------------\033[0m\n",
           "\033[34m-------------------------------------------------------------------\033[0m\n") #Start Message
 
-  parameters <- pai_params_wrapper(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed)
+  parameters <- pai_params_wrapper(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed) #Compile Parameters from Input Declarations
 
+  print_parameters(parameters) #Print Parameters
 
+  message('Beginning ', parameters$model) #Start Message for Declared Model
 
+  declared_model <- declared_model(parameters) #Return Declared ML Model
 
+  message('Beginning Placebo Iterations') #Start Message for Placebo Iterations
+
+  placebo_base <- placebo_shuffle(declared_model, parameters)
 
   end_time <- Sys.time() #End Time
   completion_time_minutes<- as.numeric((difftime(end_time, start_time, units = "secs")/60)) #Completion Time
@@ -333,6 +339,7 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
 
     {
 
+    dv <- ifelse(parameters$outcome_type == 'Binomial', paste0('factor(', dv, ')'), dv)
 
     formula <- paste0(dv, '~', paste(formula_vars, collapse = "+"))
 
@@ -410,22 +417,66 @@ print_parameters <- function(parameters){
   message("\033[32m Model: \033[0m", "\033[33m", parameters$model, "\033[0m \n",
           "\033[32m Outcome Variable: \033[0m", "\033[33m", parameters$outcome , "\033[0m \n",
           "\033[32m Predictors: \033[0m", "\033[33m " , ifelse(length(unique(parameters$predictors) < 10), paste(parameters$predictors, collapse = " "), length(unique(parameters$predictors))), " \033[0m \n",
-          "\033[32m Interaction(s): \033[0m", "\033[33m", ifelse(is.null(parameters[['interactions']]), "None", paste(paste0('(', unlist(parameters$interactions), ')'), collapse = " ")), "\033[0m \n",
-    "\033[32m Variables to Drop: \033[0m", "\033[33m", ifelse(all(parameters$predictors %in% parameters$drop_vars), "All Predictors", unlist(parameters$drop_vars)), " \033[0m \n",
-    "\033[32m Train/Test Split: \033[0m", "\033[33m", (parameters$train_split)*100, "/", 100-((parameters$train_split)*100), "\033[0m \n",
-    "\033[32m Vars Dropped Due to Sparse Variance in Train/Test: \033[0m", "\033[33m", ifelse(is.null(parameters$sparse_factors), 'None', paste(unlist(paste0('(', parameters$sparse_factors, ')')), collapse = " ")), "\033[0m \n")
+          "\033[32m Interaction(s): \033[0m", "\033[33m", ifelse(is.null(parameters[['interactions']]), "None", paste(paste0('(', unlist(parameters$interactions), ')'), collapse = " ")), "\033[0m")
+
+  if (parameters$list_drop_vars == 'FALSE'){
+    message("\033[32m Variables to Drop: \033[0m", "\033[33m", ifelse(all(parameters$predictors %in% parameters$drop_vars), "All Predictors", unlist(parameters$drop_vars)), " \033[0m")
+  } else {
+    message("\033[32m Variables to Drop: ", paste(paste0('(', unlist(parameters$list_drop_vars), ')'), collapse = " ") ," \033[0m")
+  }
+
+    message("\033[32m Train/Test Split: \033[0m", "\033[33m", (parameters$train_split)*100, "/", 100-((parameters$train_split)*100), "\033[0m \n",
+    "\033[32m Vars Dropped Due to Sparse Variance in Train/Test: \033[0m", "\033[31m", ifelse(is.null(parameters$sparse_factors), 'None', paste(unlist(paste0('(', parameters$sparse_factors, ')')), collapse = " ")), "\033[0m \n")
 
 
 }
 
 declared_model <- function(parameters){
 
+  declared_model <- train(form = as.formula(parameters$base_formula),
+                    data = parameters$train_set[[1]],
+                    metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
+                    method = as.character(parameters$model),
+                    trControl = parameters$train_control,
+                    localImp = TRUE)
+
+  return(declared_model)
 
 }
 
+placebo_shuffle <- function(declared_model, parameters) {
+
+  placebos <- data.frame() # Initialize Empty DF
+
+  variables <- unlist(parameters$predictors[!parameters$predictors %in% parameters$sparse_factors]) # Get Variables
+
+  original_predictions <- predict(declared_model, data.frame(parameters$test_set), na.action = na.pass)
+
+  for (rep in 1:as.numeric(parameters$placebo_iterations)){
+
+    for (var in variables){
+
+      shuffle_data <- data.frame(parameters$test_set) #Get Test Data
+      shuffle_data[[var]] <- sample(shuffle_data[[var]]) # Shuffle the variable
+      shuffled_predictions <- predict(declared_model, newdata = shuffle_data, na.action = na.pass) # Predict using the shuffled data
+      accuracy_change <- mean(original_predictions != shuffled_predictions) # Calculate accuracy change
+      placebo_temp <- data.frame(rep_count = rep, variable = var, accuracy_change = accuracy_change) # Store the accuracy change
+      placebos <- bind_rows(placebos, placebo_temp)
+
+    } #For Var in Variables
+
+    if (rep %% 5 == 0) {
+      cat(paste0('           Completed Placebo Shuffling Iteration ', rep, '\n'))
+    }
+
+  } #For Rep in Placebo Iterations
+
+  return(placebos)
+
+} # Placebo Protocol
 
 
-
+#Need to add exception to placebo_shuffle for interactions -- IF it influences interaction terms, needs to impact individual vars too (and visa-versa if single term is shuffled, needs to influence interaction too) -- Might want to ask Logan if that's Kosher.
 
 
 
