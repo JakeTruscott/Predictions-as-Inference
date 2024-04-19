@@ -38,6 +38,17 @@ assign_factors = NULL
 list_drop_vars = FALSE
 seed = 1234
 
+test <- pai(data = sandbox_data,
+            model = 'parRF',
+            outcome = 'var1',
+            predictors = NULL,
+            interactions = c('var3*var4'),
+            cores = 1)
+
+# To Do:
+# 1) Stop Warnings from Appearing During Omission Protocol
+# 2) Not Printing Updates Correctly - Wrong Colors...
+
 
 pai <- function(data, #Data
                 model = NULL, #Caret Model
@@ -77,15 +88,18 @@ pai <- function(data, #Data
   placebo <- placebo_shuffle(declared_model, parameters) #Run Placebo Iterations
   output[['placebo']] <- placebo #Append to Output
 
+  message('Beginning Variable Omissions') #Start Message for Placebo Iterations
+
   omitting_variables <- dropping_vars(parameters, output) #Run Omitting Vars
-  output[['omitting_variables']] <- omitting_variabels #Append to Output
+  output[['omitting_variables']] <- omitting_variables #Append to Output
 
   fit_change <- left_join(placebo, omitting_variables, by = 'var') #Create Fit Change Frame
   output[['fit_change']] <- fit_change #Append to Output
 
-  #Pusher
-  #Confidence Intervals
+  message('Beginning Push Protocol') #Start Message for Placebo Iterations
 
+  pusher <- push(parameters, output) #Push Protocol
+  output[['push']] <- pusher
 
   end_time <- Sys.time() #End Time
   completion_time_minutes<- as.numeric((difftime(end_time, start_time, units = "secs")/60)) #Completion Time
@@ -93,9 +107,6 @@ pai <- function(data, #Data
           "\033[32m-------------------------- PAI  Complete --------------------------\033[0m\n",
           "\033[34m-------------------------------------------------------------------\033[0m\n") #Completion Message
   message('\033[32mCompletion Time = ', round(completion_time_minutes,2), ' Minutes \033[0m') #Print Completion Time
-
-
-
 
 }
 
@@ -613,30 +624,43 @@ push <- function(parameters, output){
   push_output <- list() #Initialize List for Output
 
   for (variable in 1:length(variables)){
-    x = variables[variable] #Get Var
-    Z = parameters$full_data #Get Data (Test Data)
-    sd_var <- sd(Z[,x]) #Get Standard Deviation
+    var = variables[variable] #Get Var
+    data = parameters$full_data #Get Data (Test Data)
+    sd_var <- sd(data[,var]) #Get Standard Deviation
     steps <- seq(-2*sd_var, 2*sd_var, (4*sd_var)/100) #Calculate Steps (+/- 2 Sds)
 
-    tester <- lapply(steps, function(z) runpred(output$declared_model, x, z, Z, parameters$outcome_type))
+    var_push_predictions <- data.frame() #Initialize Empty DF for Push Predictions
 
+    for (step in 1:length(steps)){
 
-    tester <- lapply(steps, function(z) runpred(mod = output$declared_model,
-                                                var = var,
-                                                stepper = stepper,
-                                                Z = data,
-                                                outcome_type = parameters$outcome_type))
+      temp_pred <- push_pred(mod = output$declared_model,
+                             var = var,
+                             stepper = steps[step],
+                             Z = data,
+                             outcome_type = parameters$outcome_type) #Calculate for Step[step]
 
-    #tester <- lapply(steps, function(z) runpred(output_list$with, x, z, Z ))
-    runpred_output <- cbind(steps, t(list.cbind(tester)))
-    push_output[[x]] <- runpred_output
+      temp_pred <- data.frame(
+        step_count = step,
+        step = steps[step],
+        onecount = temp_pred[1],
+        acc = temp_pred[2]) #Put Output in Temp DF
+
+      var_push_predictions <- bind_rows(var_push_predictions, temp_pred)
+
+    }
+
+    push_output[[var]] <- var_push_predictions
+
+    message("\033[37m           Completed Push Protocol For ", var) #Print Update
+
 
   } #For Variable in Variables
 
-}
 
-runpred <- function(mod, var, stepper, Z, outcome_type){
 
+} # Push + push_pred from Stepper
+
+push_pred <- function(mod, var, stepper, Z, outcome_type){
 
   if (outcome_type == 'Continuous'){
     Z[[var]] <- Z[[var]] + stepper
@@ -647,7 +671,7 @@ runpred <- function(mod, var, stepper, Z, outcome_type){
   } else {
     Z[[var]] <- Z[[var]] + stepper
     pred <- predict(mod, Z)
-    true <- Z$y
+    true <- Z[,parameters[['outcome']]]
     onecount <- length(which(pred=='1'))/length(true)
     acc <- length(which(pred==true))/length(true)
     return(c(onecount, acc))
@@ -655,4 +679,4 @@ runpred <- function(mod, var, stepper, Z, outcome_type){
 
 
 
-} #runpred
+} #Predictive Accuracy from Steps
