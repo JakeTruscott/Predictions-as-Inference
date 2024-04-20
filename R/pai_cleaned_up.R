@@ -34,6 +34,21 @@ test <- pai(data = sandbox_data,
 
 #To Do: Add Diagnostic Stuff to Output
 
+data = sandbox_data #Data
+model = 'parRF'  #Caret Model
+outcome = 'var1'  #DV
+predictors = NULL  #IVs
+interactions = NULL  #Interactive Terms
+drop_vars = NULL  #Defaults to All
+cores = NULL  #Defaults to 1
+placebo_iterations = NULL  #Defaults to 10
+folds = NULL  #Defaults to 5
+train_split = 0.8  #Defaults to 80/20
+custom_tc = FALSE  #Defaults to Basic TC (3 Repeats  Assigned K-Folds  etc.)
+assign_factors = 3  #Defaults to 3 - Change to Any Number
+list_drop_vars = FALSE  #Defaults to FALSE
+seed = 1234
+
 
 pai <- function(data, #Data
                 model = NULL, #Caret Model
@@ -63,11 +78,12 @@ pai <- function(data, #Data
 
   message("Initializing Parallel Environment with \033[37m", cores, " Core(s)") #Print Update
 
+  parameters <- pai_params_wrapper(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed) #Compile Parameters from Input Declarations
+
   doParallel::registerDoParallel(as.numeric(parameters$cores)) #Register Parallel Environment
 
-  foreach(i = 1:cores, .export = c("declared_model", "dropping_vars", "pai_params_wrapper", "placebo_shuffle", "print_parameters", "push", "push_pred", "sparse_variable_check", "suppress_message")) %dopar% {
+  #foreach(i = 1:cores, .export = c("declared_model", "dropping_vars", "pai_params_wrapper", "placebo_shuffle", "print_parameters", "push", "push_pred", "sparse_variable_check", "suppress_message", "parameters")) %dopar% {
 
-    parameters <- pai_params_wrapper(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed) #Compile Parameters from Input Declarations
 
     print_parameters(parameters) #Print Parameters
 
@@ -101,7 +117,7 @@ pai <- function(data, #Data
 
     output[['parameters']] <- parameters #Append Parameters to Output
 
-  }
+  #}
 
   end_time <- Sys.time() #End Time
   completion_time_minutes<- as.numeric((difftime(end_time, start_time, units = "secs")/60)) #Completion Time
@@ -144,11 +160,9 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
       parameters[['predictors']] <- list(predictors)
     } # Declare Predictors
 
-    if (is.null(interactions)){
-      parameters[['interactions']] <- 'None'
-    } else {
-      parameters[['interactions']] <- c(interactions)
-    } #Declare Interaction Terms
+    if (!is.null(interactions)){
+      parameters[['interactions']] <- c(interaction)
+      } #Declare Interaction Terms
 
     if (is.null(drop_vars)){
       parameters[['drop_vars']] <- c(parameters[['predictors']], parameters[['interactions']])
@@ -268,7 +282,7 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
 
     {
 
-      if (parameters$interactions[1] == 'None'){
+      if (is.null(parameters$interactions)){
         combined_vars <- unique(parameters$predictors)
       } else {
         combined_vars <- unique(c(unique(unlist(stringr::str_split(parameters$interactions, pattern = "\\*|\\:"))), unique(parameters$predictors)))
@@ -277,13 +291,13 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
       full_data <-  data %>%
         dplyr::select(parameters$outcome, any_of(unlist(combined_vars))) #Get Full Data
 
-      interactive_terms <- parameters$interactions #Get Interaction Terms (Build Manually)
-
-      for (interaction in interactive_terms){
-        temp_term <- interaction
-        vars <- strsplit(temp_term, "([*]|[:])")[[1]]
-        full_data <- full_data %>%
-          mutate(!!temp_term := !!as.symbol(vars[1]) * !!as.symbol(vars[2]))
+      if (!is.null(parameters$interactions)){
+        for (interaction in interactive_terms){
+          temp_term <- interaction
+          vars <- strsplit(temp_term, "([*]|[:])")[[1]]
+          full_data <- full_data %>%
+            mutate(!!temp_term := !!as.symbol(vars[1]) * !!as.symbol(vars[2]))
+        }
       }
 
       parameters['full_data'] <- list(full_data)
@@ -324,13 +338,13 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
       formula_vars <- c(non_factors, factors) #Create Single Formula Vars (No Interactions Yet...)
 
       {
-        if (parameters['interactions'] == 'None') {
+        if (is.null(parameters$interactions)) {
           formula_vars <- formula_vars #If No Interactions, Skip
         } else {
 
-          formula_interactions <- c()
+          formula_interactions <- c() #Create Empty Object to Store Formula Interaction Terms (IF Declared)
 
-          interactions <- unlist(parameters$interactions)
+          interactions <- unlist(parameters$interactions) #Get Interactive Terms
 
           for (i in 1:length(interactions)){
 
@@ -361,7 +375,12 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
 
           }
 
-          formula_vars <- c(formula_vars, formula_interactions)
+          if(is.null(formula_interactions)){
+            formula_vars <- formula_vars
+          } else {
+            formula_vars <- c(formula_vars, formula_interactions)
+          }
+
 
         } #Check if Interactions Are Sparse or Factor
 
@@ -382,11 +401,9 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
 
     {
 
-      dv <- ifelse(parameters$outcome_type == 'Binomial', paste0('factor(', dv, ')'), dv)
+      dv <- ifelse(parameters$outcome_type == 'Binomial', paste0('factor(', dv, ')'), dv) #Get DV
 
-      formula <- paste0(dv, '~', paste(formula_vars, collapse = "+"))
-
-      parameters[['base_formula']] <- formula
+      parameters[['base_formula']] <- paste0(dv, '~', paste(formula_vars, collapse = "+")) #Create Formula
 
 
     } #Create Formula (+ Message for What Was Tossed b/c Sparse)
@@ -491,7 +508,11 @@ placebo_shuffle <- function(declared_model, parameters){
 
   placebos <- data.frame() # Initialize Empty DF
 
-  variables <- c(unlist(parameters$predictors), unlist(parameters$interactions)) # Get Variables
+  if(is.null(parameters$interactions)){
+    variables <- c(unlist(parameters$predictors))
+  } else {
+    variables <- c(unlist(parameters$predictors), unlist(parameters$interactions))
+  }  # Get Variables
 
   original_predictions <- predict(declared_model, data.frame(parameters$test_set), na.action = na.pass)
 
@@ -587,7 +608,7 @@ dropping_vars <- function(parameters, output){
       temp_combination_row <- combinations[combination,] #Get Temp Row
       temp_dropped_var <- temp_combination_row$dropped_var
 
-      suppress_message({
+      suppressWarnings(suppress_message({
         temp_drop_var_declared_model <- train(
           form = as.formula(temp_combination$temp_combination),
           data = data.frame(parameters$train_set),
@@ -596,7 +617,7 @@ dropping_vars <- function(parameters, output){
           trControl = parameters$train_control,
           localImp = TRUE
         )
-      })  #Re-Run Model w/ Omitted Variable
+      }))  #Re-Run Model w/ Omitted Variable
 
       if (parameters$outcome_type == 'Continuous'){
         fit_drop_var <- mean(temp_drop_var_declared_model$results$RMSE)
@@ -671,8 +692,7 @@ push <- function(parameters, output){
 
     push_output[[temp_var]] <- var_push_predictions
 
-    message("\033[37m           Completed Push Protocol For ", temp_var) #Print Update
-
+    message("\033[37m           Completed Push Protocol For \033[0m", temp_var) #Print Update
 
   } #For Variable in Variables
 
@@ -745,3 +765,5 @@ bootstrap_predictions_ci <- function(output, parameters){
 
 
 }
+
+
