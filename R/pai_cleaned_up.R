@@ -32,7 +32,7 @@ test <- pai(data = sandbox_data,
             interactions = c('var4*var5'),
             cores = 1)
 
-#To Do: Add Parallel
+#To Do: Add Diagnostic Stuff to Output
 
 
 pai <- function(data, #Data
@@ -88,6 +88,11 @@ pai <- function(data, #Data
 
     fit_change <- left_join(placebo, omitting_variables, by = 'var') #Create Fit Change Frame
     output[['fit_change']] <- fit_change #Append to Output
+
+    message('Compiling Bootstrapped Confidence Intervals') #Start Message for Placebo Iterations
+
+    bootstrap_cis <- bootstrap_predictions_ci(output, parameters) #Compile Bootstrapped CIs from Predictions
+    output[['bootstrap_predictions_CI']] <- bootstrap_cis #Append to Output
 
     message('Beginning Push Protocol') #Start Message for Placebo Iterations
 
@@ -704,3 +709,39 @@ suppress_message <- function(expr){
   })
   invisible(result)
 } #Special Function to Suppress Messages from Caret (R)
+
+bootstrap_predictions_ci <- function(output, parameters){
+
+  test_data = data.frame(parameters$test_set) #Grab Test Data
+  outcome_variable = parameters[['outcome']] #Set Outcome Var
+
+  predictions <- predict(output$declared_model, newdata = test_data) #Get Base Predictions
+  comparison_set <- data.frame(parameters$test_set)[outcome_variable][,1] #Set Real Data
+  accuracy <- mean(predictions == comparison_set) #Get Predictive Accuracy from Predictions v. Real Data
+
+  bootstrap_accuracies <- numeric() #Create Empty List to Store Bootstrap Accuracies
+
+  for (i in 1:100) {
+    bootstrap_indices <- sample(nrow(test_data), replace = TRUE) #Generate Bootstrap Sample
+    bootstrap_test_data <- test_data[bootstrap_indices, ] #Subset Test Data by Sample Indeces
+    bootstrap_test_data <- bootstrap_test_data[, !names(bootstrap_test_data) == parameters$outcome, drop = FALSE] #Remove DV
+    bootstrap_predictions <- predict(output$declared_model, newdata = bootstrap_test_data) #Predict on Boostrap Sample
+    bootstrap_accuracy <- mean(bootstrap_predictions == test_data[parameters[['outcome']]][bootstrap_indices,]) #Calculate Accuracy
+    bootstrap_accuracies[i] <- bootstrap_accuracy
+  } #Compile Predictions from Bootstrapped Samples of Test Data
+
+  bootstrap_summary <- data.frame(
+    median = median(bootstrap_accuracies), #Median
+    mean = mean(bootstrap_accuracies), #Mean
+    conf_lower = as.numeric(quantile(bootstrap_accuracies, c((1 - 0.95) / 2, 1 - (1 - 0.95) / 2))[1]), #2.5%
+    conf_higher = as.numeric(quantile(bootstrap_accuracies, c((1 - 0.95) / 2, 1 - (1 - 0.95) / 2))[2]), #97.5
+    max = max(bootstrap_accuracies), #Max
+    min = min(bootstrap_accuracies), #Min,
+    boostraps = length(bootstrap_accuracies) #Count
+  ) #Compile Into Single DF
+
+  return(bootstrap_summary) #Return Summary
+
+
+
+}
