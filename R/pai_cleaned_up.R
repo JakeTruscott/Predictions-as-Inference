@@ -12,6 +12,7 @@
 require(caret)
 require(dplyr)
 require(stringr)
+require(doParallel)
 
 sandbox_data <- data.frame(
   var1 = sample(0:1, 100, replace = TRUE),
@@ -23,31 +24,15 @@ sandbox_data <- data.frame(
 
 )
 
-data = sandbox_data
-outcome = 'var1'
-predictors = NULL
-model = 'parRF'
-interactions = c('var2:var3', 'var4*var5')
-drop_vars = NULL
-cores = 1
-placebo_iterations = 10
-folds = NULL
-train_split = 0.8
-custom_tc = FALSE
-assign_factors = NULL
-list_drop_vars = FALSE
-seed = 1234
 
 test <- pai(data = sandbox_data,
             model = 'parRF',
             outcome = 'var1',
             predictors = NULL,
-            interactions = c('var3*var4'),
+            interactions = c('var4*var5'),
             cores = 1)
 
-# To Do:
-# 1) Stop Warnings from Appearing During Omission Protocol
-# 2) Not Printing Updates Correctly - Wrong Colors...
+#To Do: Add Parallel
 
 
 pai <- function(data, #Data
@@ -60,7 +45,7 @@ pai <- function(data, #Data
                 placebo_iterations = NULL, #Defaults to 10
                 folds = NULL, #Defaults to 5
                 train_split = 0.8, #Defaults to 80/20
-                custom_tc = FALSE,
+                custom_tc = FALSE, #Defaults to Basic TC (3 Repeats, Assigned K-Folds, etc.)
                 assign_factors = 3, #Defaults to 3 - Change to Any Number
                 list_drop_vars = FALSE, #Defaults to FALSE
                 seed = 1234 #Defaults to 1234
@@ -74,32 +59,44 @@ pai <- function(data, #Data
 
   output <- list() #Create Empty List to Store Output, Params, etc.
 
-  parameters <- pai_params_wrapper(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed) #Compile Parameters from Input Declarations
+  set.seed(seed) #Set Random Seed (Defaults to 1234)
 
-  print_parameters(parameters) #Print Parameters
+  message("Initializing Parallel Environment with \033[37m", cores, " Core(s)") #Print Update
 
-  message('Beginning ', parameters$model) #Start Message for Declared Model
+  doParallel::registerDoParallel(as.numeric(parameters$cores)) #Register Parallel Environment
 
-  declared_model <- declared_model(parameters) #Return Declared ML Model
-  output[['declared_model']] <- declared_model #Add to
+  foreach(i = 1:cores, .export = c("declared_model", "dropping_vars", "pai_params_wrapper", "placebo_shuffle", "print_parameters", "push", "push_pred", "sparse_variable_check", "suppress_message")) %dopar% {
 
-  message('Beginning Placebo Iterations') #Start Message for Placebo Iterations
+    parameters <- pai_params_wrapper(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed) #Compile Parameters from Input Declarations
 
-  placebo <- placebo_shuffle(declared_model, parameters) #Run Placebo Iterations
-  output[['placebo']] <- placebo #Append to Output
+    print_parameters(parameters) #Print Parameters
 
-  message('Beginning Variable Omissions') #Start Message for Placebo Iterations
+    message('Beginning ', parameters$model) #Start Message for Declared Model
 
-  omitting_variables <- dropping_vars(parameters, output) #Run Omitting Vars
-  output[['omitting_variables']] <- omitting_variables #Append to Output
+    declared_model <- declared_model(parameters) #Return Declared ML Model
+    output[['declared_model']] <- declared_model #Add to
 
-  fit_change <- left_join(placebo, omitting_variables, by = 'var') #Create Fit Change Frame
-  output[['fit_change']] <- fit_change #Append to Output
+    message('Beginning Placebo Iterations') #Start Message for Placebo Iterations
 
-  message('Beginning Push Protocol') #Start Message for Placebo Iterations
+    placebo <- placebo_shuffle(declared_model, parameters) #Run Placebo Iterations
+    output[['placebo']] <- placebo #Append to Output
 
-  pusher <- push(parameters, output) #Push Protocol
-  output[['push']] <- pusher
+    message('Beginning Variable Omissions') #Start Message for Placebo Iterations
+
+    omitting_variables <- dropping_vars(parameters, output) #Run Omitting Vars
+    output[['omitting_variables']] <- omitting_variables #Append to Output
+
+    fit_change <- left_join(placebo, omitting_variables, by = 'var') #Create Fit Change Frame
+    output[['fit_change']] <- fit_change #Append to Output
+
+    message('Beginning Push Protocol') #Start Message for Placebo Iterations
+
+    pusher <- push(parameters, output) #Push Protocol
+    output[['push']] <- pusher #Append to Output
+
+    output[['parameters']] <- parameters #Append Parameters to Output
+
+  }
 
   end_time <- Sys.time() #End Time
   completion_time_minutes<- as.numeric((difftime(end_time, start_time, units = "secs")/60)) #Completion Time
@@ -108,8 +105,9 @@ pai <- function(data, #Data
           "\033[34m-------------------------------------------------------------------\033[0m\n") #Completion Message
   message('\033[32mCompletion Time = ', round(completion_time_minutes,2), ' Minutes \033[0m') #Print Completion Time
 
-}
+  return(output) #Return Output Object
 
+} #Predictions as Inference Main Function
 
 
 pai_params_wrapper <- function(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed){
@@ -212,7 +210,8 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
         parameters[['train_control']] <- trainControl(method = 'repeatedcv',
                                                       number = 5,
                                                       repeats = 3,
-                                                      savePredictions = TRUE)
+                                                      savePredictions = TRUE,
+                                                      verbose = F)
       } else {
 
         custom_params <- data.frame(custom_declare = strsplit(custom_tc, ', ')[[1]])
@@ -400,8 +399,8 @@ sparse_variable_check <- function(parameters){
   data = parameters$full_data
   dv = parameters$outcome
   variables = unlist(parameters$predictors)
-  test_data = parameters$test_set[[1]]
-  train_data = parameters$train_set[[1]]
+  test_data = data.frame(parameters$test_set)
+  train_data = data.frame(parameters$train_set)
   factor_level_min = parameters$assign_factors
 
   factor_variables <- c() #Initialize Empty Object for Factor Vars
@@ -473,7 +472,7 @@ print_parameters <- function(parameters){
 declared_model <- function(parameters){
 
   declared_model <- train(form = as.formula(parameters$base_formula),
-                    data = parameters$train_set[[1]],
+                    data = data.frame(parameters$train_set),
                     metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
                     method = as.character(parameters$model),
                     trControl = parameters$train_control,
@@ -505,7 +504,8 @@ placebo_shuffle <- function(declared_model, parameters){
     } #For Var in Variables
 
     if (rep %% 5 == 0) {
-      message("\033[37m           Completed Placebo Shuffling Iteration ", rep)
+      message("\033[37m           Completed Placebo Shuffling Iteration \033[0m", rep) #Print Update
+
     }
 
   } #For Rep in Placebo Iterations
@@ -581,12 +581,17 @@ dropping_vars <- function(parameters, output){
     for (combination in 1:nrow(combinations)){
       temp_combination_row <- combinations[combination,] #Get Temp Row
       temp_dropped_var <- temp_combination_row$dropped_var
-      temp_drop_var_declared_model <- train(form = as.formula(temp_combination$temp_combination),
-                                            data = parameters$train_set[[1]],
-                                            metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
-                                            method = as.character(parameters$model),
-                                            trControl = parameters$train_control,
-                                            localImp = TRUE) #Re-Run Model w/ Omitted Variable
+
+      suppress_message({
+        temp_drop_var_declared_model <- train(
+          form = as.formula(temp_combination$temp_combination),
+          data = data.frame(parameters$train_set),
+          metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
+          method = as.character(parameters$model),
+          trControl = parameters$train_control,
+          localImp = TRUE
+        )
+      })  #Re-Run Model w/ Omitted Variable
 
       if (parameters$outcome_type == 'Continuous'){
         fit_drop_var <- mean(temp_drop_var_declared_model$results$RMSE)
@@ -601,7 +606,7 @@ dropping_vars <- function(parameters, output){
 
       fit_change <- bind_rows(fit_change, change_temp) #Append to fit_change
 
-      message("\033[37m           Completed Variable Omission For ", temp_combination_row$dropped_var) #Print Update
+      message("\033[37m           Completed Variable Omission For \033[0m", temp_combination_row$dropped_var) #Print Update
 
     }
 
@@ -624,24 +629,34 @@ push <- function(parameters, output){
   push_output <- list() #Initialize List for Output
 
   for (variable in 1:length(variables)){
-    var = variables[variable] #Get Var
+    temp_var = variables[variable] #Get Var
     data = parameters$full_data #Get Data (Test Data)
-    sd_var <- sd(data[,var]) #Get Standard Deviation
-    steps <- seq(-2*sd_var, 2*sd_var, (4*sd_var)/100) #Calculate Steps (+/- 2 Sds)
+    temp_var_distribution = unique(data[,temp_var]) #Get Distribution of Temp Var
+
+    if (length(temp_var_distribution) <= 4){
+      is_factor = TRUE #If factor TRUE
+      steps = unique(temp_var_distribution)
+    } else {
+      is_factor = FALSE #If NOT Factor (FALSE)
+      sd_var <- sd(data[,temp_var]) #Get Standard Deviation
+      steps <- seq(-2*sd_var, 2*sd_var, (4*sd_var)/100) #Calculate Steps (+/- 2 Sds)
+    } #If Factor (Steps = Levels); Else (Steps = +/- 2 Sds)
+
 
     var_push_predictions <- data.frame() #Initialize Empty DF for Push Predictions
 
     for (step in 1:length(steps)){
 
+      temp_step = steps[step]
+
       temp_pred <- push_pred(mod = output$declared_model,
-                             var = var,
-                             stepper = steps[step],
+                             var = ifelse(is_factor == TRUE, factor(temp_var), temp_var),
+                             stepper = temp_step,
                              Z = data,
                              outcome_type = parameters$outcome_type) #Calculate for Step[step]
 
       temp_pred <- data.frame(
-        step_count = step,
-        step = steps[step],
+        step = temp_step,
         onecount = temp_pred[1],
         acc = temp_pred[2]) #Put Output in Temp DF
 
@@ -649,9 +664,9 @@ push <- function(parameters, output){
 
     }
 
-    push_output[[var]] <- var_push_predictions
+    push_output[[temp_var]] <- var_push_predictions
 
-    message("\033[37m           Completed Push Protocol For ", var) #Print Update
+    message("\033[37m           Completed Push Protocol For ", temp_var) #Print Update
 
 
   } #For Variable in Variables
@@ -680,3 +695,12 @@ push_pred <- function(mod, var, stepper, Z, outcome_type){
 
 
 } #Predictive Accuracy from Steps
+
+suppress_message <- function(expr){
+  sink(tempfile())
+  result <- tryCatch(expr, finally = {
+    sink()
+    file.remove(tempfile())
+  })
+  invisible(result)
+} #Special Function to Suppress Messages from Caret (R)
