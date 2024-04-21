@@ -13,6 +13,7 @@ require(caret)
 require(dplyr)
 require(stringr)
 require(doParallel)
+require(segmented)
 
 sandbox_data <- data.frame(
   var1 = sample(0:1, 100, replace = TRUE),
@@ -543,12 +544,14 @@ placebo_shuffle <- function(declared_model, parameters){
     summarize(mean_change = mean(accuracy_change),
               sd_change = sd(accuracy_change),
               lower_bound = mean_change - qt(0.975, n() - 1) * (sd_change / sqrt(n())),
-              upper_bound = mean_change + qt(0.975, n() - 1) * (sd_change / sqrt(n())))
+              upper_bound = mean_change + qt(0.975, n() - 1) * (sd_change / sqrt(n())),
+              max_change = max(accuracy_change),
+              min_change = min(accuracy_change))
 
   return(placebo)
 
 } # Placebo Protocol
-
+S
 # Problem with Placebo Shuffle -- Needs to Shuffle Interactions x Base Terms if One or Other is Declared...
 
 dropping_vars <- function(parameters, output){
