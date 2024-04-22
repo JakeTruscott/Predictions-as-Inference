@@ -551,7 +551,6 @@ placebo_shuffle <- function(declared_model, parameters){
   return(placebo)
 
 } # Placebo Protocol
-S
 # Problem with Placebo Shuffle -- Needs to Shuffle Interactions x Base Terms if One or Other is Declared...
 
 dropping_vars <- function(parameters, output){
@@ -699,7 +698,7 @@ push <- function(parameters, output){
 
   } #For Variable in Variables
 
-
+  return(push_output)
 
 } # Push + push_pred from Stepper
 

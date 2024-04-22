@@ -69,37 +69,52 @@ pai_diagnostic <- function(pai_object, #PAI Output Object
 
       push_output <- pai_object$push #Grab Push Output
 
-      diagnostic_push <- list()
+      diagnostic_push <- list() #Create Empty List for Output
 
+      for (var in linear_vars){
+        diagnostic_push[[var]] <- list()
+      } #Create Var-Level List for diagnostic_push
 
       for (var in linear_vars){
 
-        diagnostic_push[[var]] <- list() #Create Var-Level List in Diagnostic Push
         temp_dat <- push_output[[var]] #Grab Temp Var
-        temp_dat$bin <- cut_interval(as.numeric(temp_dat$step), n = bin_cuts) #Assign Bins
 
-        temp_slopes <- list()
-        temp_figures <- list()
+        if (bin_cuts == 'optimal'){
+          scott_info <- hist(data[[var]], breaks = "scott", plot = FALSE) #Get # Bins from Scot's Normal Reference Rule
+          breakpoints <- length(scott_info$breaks)
+          temp_dat$bin <- cut_interval(as.numeric(temp_dat$step), n = breakpoints) #Assign Bins
+
+        } else {
+          temp_dat$bin <- cut_interval(as.numeric(temp_dat$step), n = bin_cuts) #Assign Bins
+
+        } #Assign Bins
 
         for (temp_bin in 1:length(unique(temp_dat$bin))){
 
           temp_bin_dat <- temp_dat %>%
             filter(bin == unique(temp_dat$bin)[temp_bin])
           lm_bin_temp <- lm(acc ~ step, data = temp_bin_dat)
-          temp_slopes[[as.character(temp_bin)]]['bin_number'] <- temp_bin
-          temp_slopes[[as.character(temp_bin)]]['bin'] <- unique(temp_dat$bin)[temp_bin]
+
+          temp_list <- list(
+            bin_range = unique(temp_dat$bin)[temp_bin],
+            linear_fit = lm_bin_temp
+          )
+
+          diagnostic_push[[var]][[temp_bin]] <- temp_list
+
+        } #Calculate LM by Bins
+
+      } #Temp Bin in Bins
 
 
-        }
-
-      }
+      #Need to Figure Out How to Plot This
 
 
-
-
-    }
-
+    } # IF plot_type is Linear
 
   } #Linear Fit Across Bins
 
-}
+
+
+
+} #Linear Fit by Bins
