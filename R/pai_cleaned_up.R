@@ -83,7 +83,7 @@ pai <- function(data, #Data
 
   doParallel::registerDoParallel(as.numeric(parameters$cores)) #Register Parallel Environment
 
-  #foreach(i = 1:cores, .export = c("declared_model", "dropping_vars", "pai_params_wrapper", "placebo_shuffle", "print_parameters", "push", "push_pred", "sparse_variable_check", "suppress_message", "parameters")) %dopar% {
+  #foreach(i = 1:cores, .export = c("declared_model", "dropping_vars", "pai_params_wrapper", "placebo_shuffle", "print_parameters", "push", "push_pred", "sparse_variable_check", "suppress_message", "parameters", "output", "bootstrap_predictions_ci", "pai_diagnostic")) %dopar% {
 
 
     print_parameters(parameters) #Print Parameters
