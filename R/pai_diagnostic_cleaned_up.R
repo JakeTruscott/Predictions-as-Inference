@@ -53,7 +53,7 @@ pai_diagnostic <- function(pai_object, #PAI Output Object
 
   {
 
-    if (plot_type %in% c('Linear', 'linear')){
+    if (plot_type %in% c('push', 'Push')){
 
       if (is.null(bins) || plot_type %in% c('optimize', 'Optimize', 'optimized', 'Optimized')){
         bin_cuts <- 'optimize'
@@ -78,6 +78,8 @@ pai_diagnostic <- function(pai_object, #PAI Output Object
       for (var in linear_vars){
 
         temp_dat <- push_output[[var]] #Grab Temp Var
+        base_plot <- ggplot(data = temp_dat, aes(x = step, y = acc)) +
+          geom_point() #Generate Base Plot
 
         if (bin_cuts == 'optimal'){
           scott_info <- hist(data[[var]], breaks = "scott", plot = FALSE) #Get # Bins from Scot's Normal Reference Rule
@@ -91,30 +93,47 @@ pai_diagnostic <- function(pai_object, #PAI Output Object
 
         for (temp_bin in 1:length(unique(temp_dat$bin))){
 
+          bin_label <- unique(temp_dat$bin)[temp_bin]
+
           temp_bin_dat <- temp_dat %>%
             filter(bin == unique(temp_dat$bin)[temp_bin])
           lm_bin_temp <- lm(acc ~ step, data = temp_bin_dat)
 
-          temp_list <- list(
-            bin_range = unique(temp_dat$bin)[temp_bin],
-            linear_fit = lm_bin_temp
+          diagnostic_push[[var]][['linear_fit']][[as.character(bin_label)]] <- broom::tidy(lm_bin_temp) %>%
+            mutate(sig = case_when(
+              .default = '',
+              p.value <= 0.05 & p.value > 0.01 ~ '*',
+              p.value <=0.01 & p.value > 0.001 ~ '**',
+              p.value <= 0.001 ~ '***'
+            ))
+
+          base_plot <- base_plot +
+            geom_smooth(method = 'lm', formula = y ~ x, data = temp_bin_dat)
+
+
+        } #Calculate LM by Bins & Append to Base Plot
+
+        diagnostic_push[[var]][['linear_plot']] <- base_plot +
+          theme_minimal() +
+          labs(x = '\nStep\n',
+               y = '\nAccuracy\n') +
+          theme(
+            panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
+            axis.text = element_text(size = 12, colour = 'black'),
+            axis.title = element_text(size = 12, colour = 'black')
           )
 
-          diagnostic_push[[var]][[temp_bin]] <- temp_list
-
-        } #Calculate LM by Bins
-
-      } #Temp Bin in Bins
-
-
-      #Need to Figure Out How to Plot This
+      } #By Var - Calculate Linear Fit & Plot
 
 
     } # IF plot_type is Linear
 
+    diagnostics[['push']] <- diagnostic_push
+
   } #Linear Fit Across Bins
 
+  {
 
-
+  } #Confidence Intervals
 
 } #Linear Fit by Bins
