@@ -1,22 +1,10 @@
-pai_diagnostic <- function(pai_object, #PAI Output Object
-                       plot_type = NULL, #Plot Type to Render
-                       variables= NULL, #Variables to Render (Default = ALL)
-                       bins = NULL, #Bins (Defaults to NULL if Placebo; 5 if Other)
-                       add_aes = NULL #Add ggplot aesthetics (as list)
-                       ){
+pai_diagnostic <- function(output){
 
   diagnostics <- list()
 
   {
 
-    if (plot_type %in% c('Placebo', 'placebo')){
-
-      if (is.null(variables)){
-        placebo_vars <- pai_object$fit_change$var
-      } else {
-        placebo_vars <- variables
-      } # Based on Vars Declared, Declare Variables
-
+      placebo_vars <- output$placebo$var
       {
 
         placebo_figure <- pai_object$fit_change %>%
@@ -47,27 +35,13 @@ pai_diagnostic <- function(pai_object, #PAI Output Object
       diagnostics[['placebo']] <- placebo_figure #Add Placebo Figure to Diagnostic
 
 
-    }
-
   } #Placebo Iterations
 
   {
 
-    if (plot_type %in% c('push', 'Push')){
+      linear_vars <- output$fit_change$var
 
-      if (is.null(bins) || plot_type %in% c('optimize', 'Optimize', 'optimized', 'Optimized')){
-        bin_cuts <- 'optimize'
-      } else {
-        bin_cuts <- as.numeric(bins)
-      } #Assign 'bin_cuts'
-
-      if (is.null(variables)){
-        linear_vars <- pai_object$fit_change$var
-      } else {
-        linear_vars <- variables
-      } # Based on Vars Declared, Declare Variables
-
-      push_output <- pai_object$push #Grab Push Output
+      push_output <- output$push #Grab Push Output
 
       diagnostic_push <- list() #Create Empty List for Output
 
@@ -81,15 +55,9 @@ pai_diagnostic <- function(pai_object, #PAI Output Object
         base_plot <- ggplot(data = temp_dat, aes(x = step, y = acc)) +
           geom_point() #Generate Base Plot
 
-        if (bin_cuts == 'optimal'){
-          scott_info <- hist(data[[var]], breaks = "scott", plot = FALSE) #Get # Bins from Scot's Normal Reference Rule
-          breakpoints <- length(scott_info$breaks)
-          temp_dat$bin <- cut_interval(as.numeric(temp_dat$step), n = breakpoints) #Assign Bins
-
-        } else {
-          temp_dat$bin <- cut_interval(as.numeric(temp_dat$step), n = bin_cuts) #Assign Bins
-
-        } #Assign Bins
+        scott_info <- hist(data[[var]], breaks = "scott", plot = FALSE) #Get # Bins from Scot's Normal Reference Rule
+        breakpoints <- length(scott_info$breaks)
+        temp_dat$bin <- cut_interval(as.numeric(temp_dat$step), n = breakpoints) #Assign Bins
 
         for (temp_bin in 1:length(unique(temp_dat$bin))){
 
@@ -125,9 +93,6 @@ pai_diagnostic <- function(pai_object, #PAI Output Object
 
       } #By Var - Calculate Linear Fit & Plot
 
-
-    } # IF plot_type is Linear
-
     diagnostics[['push']] <- diagnostic_push
 
   } #Linear Fit Across Bins
@@ -136,4 +101,8 @@ pai_diagnostic <- function(pai_object, #PAI Output Object
 
   } #Confidence Intervals
 
+  return(diagnostics)
+
 } #Linear Fit by Bins
+
+t <- pai_diagnostic(output)

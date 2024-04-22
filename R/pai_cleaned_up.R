@@ -35,6 +35,22 @@ test <- pai(data = sandbox_data,
             cores = 1)
 
 
+data = sandbox_data #Data
+model = 'parRF'  #Caret Model
+outcome = 'var1'  #DV
+predictors = NULL  #IVs
+interactions = c('var4*var5')  #Interactive Terms
+drop_vars = NULL  #Defaults to All
+cores = NULL  #Defaults to 1
+placebo_iterations = NULL  #Defaults to 10
+folds = NULL  #Defaults to 5
+train_split = 0.8  #Defaults to 80/20
+custom_tc = FALSE  #Defaults to Basic TC (3 Repeats  Assigned K-Folds  etc.)
+assign_factors = 3  #Defaults to 3 - Change to Any Number
+list_drop_vars = FALSE  #Defaults to FALSE
+seed = 1234
+
+
 pai <- function(data, #Data
                 model = NULL, #Caret Model
                 outcome = NULL, #DV
@@ -149,7 +165,9 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
     } # Declare Predictors
 
     if (!is.null(interactions)){
-      parameters[['interactions']] <- c(interaction)
+      parameters[['interactions']] <- c(interactions)
+      } else {
+        parameters[['interactions']] <- NULL
       } #Declare Interaction Terms
 
     if (is.null(drop_vars)){
@@ -264,7 +282,7 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
 
     } #Assign DV Type (Binomial or Continuous)
 
-  } # Other Params (Custom Train Control) + Assingn DV Type
+  } # Other Params (Custom Train Control) + Assign DV Type
 
   {
 
@@ -525,7 +543,7 @@ placebo_shuffle <- function(declared_model, parameters){
   } #For Rep in Placebo Iterations
 
   placebo <- placebos %>%
-    select(-rep_count) %>%
+    dplyr::select(-c(rep_count)) %>%
     rename(var = variable) %>%
     group_by(var) %>%
     summarize(mean_change = mean(accuracy_change),
@@ -714,7 +732,6 @@ suppress_message <- function(expr){
   sink(tempfile())
   result <- tryCatch(expr, finally = {
     sink()
-    file.remove(tempfile())
   })
   invisible(result)
 } #Special Function to Suppress Messages from Caret (R)
@@ -739,17 +756,7 @@ bootstrap_predictions_ci <- function(output, parameters){
     bootstrap_accuracies[i] <- bootstrap_accuracy
   } #Compile Predictions from Bootstrapped Samples of Test Data
 
-  bootstrap_summary <- data.frame(
-    median = median(bootstrap_accuracies), #Median
-    mean = mean(bootstrap_accuracies), #Mean
-    conf_lower = as.numeric(quantile(bootstrap_accuracies, c((1 - 0.95) / 2, 1 - (1 - 0.95) / 2))[1]), #2.5%
-    conf_higher = as.numeric(quantile(bootstrap_accuracies, c((1 - 0.95) / 2, 1 - (1 - 0.95) / 2))[2]), #97.5
-    max = max(bootstrap_accuracies), #Max
-    min = min(bootstrap_accuracies), #Min,
-    boostraps = length(bootstrap_accuracies) #Count
-  ) #Compile Into Single DF
-
-  return(bootstrap_summary) #Return Summary
+  return(bootstrap_accuracies) #Return Summary
 
 
 
@@ -764,7 +771,7 @@ pai_diagnostic <- function(output){
     placebo_vars <- output$placebo$var
     {
 
-      placebo_figure <- pai_object$fit_change %>%
+      placebo_figure <- output$fit_change %>%
         filter(var %in% placebo_vars) %>%
         mutate(var_numeric = 1:nrow(.)) %>%
         mutate(var = ifelse(grepl("\\*", var), gsub("\\*", " x\n", var), var)) %>%
@@ -809,10 +816,16 @@ pai_diagnostic <- function(output){
     for (var in linear_vars){
 
       temp_dat <- push_output[[var]] #Grab Temp Var
-      base_plot <- ggplot(data = temp_dat, aes(x = step, y = acc)) +
-        geom_point() #Generate Base Plot
 
-      scott_info <- hist(data[[var]], breaks = "scott", plot = FALSE) #Get # Bins from Scot's Normal Reference Rule
+      if (var %in% c(unlist(output$parameters$factors))){
+        base_plot <- ggplot(data = temp_dat, aes(x = factor(step), y = acc)) +
+          geom_point() #Generate Base Plot
+      } else {
+        base_plot <- ggplot(data = temp_dat, aes(x = step, y = acc)) +
+          geom_point() #Generate Base Plot
+      } #Create Base Plot (Assign x as Factor if in Parameters$factors)
+
+      scott_info <- hist(temp_dat$step, breaks = "scott", plot = FALSE) #Get # Bins from Scot's Normal Reference Rule
       breakpoints <- length(scott_info$breaks)
       temp_dat$bin <- cut_interval(as.numeric(temp_dat$step), n = breakpoints) #Assign Bins
 
@@ -822,7 +835,7 @@ pai_diagnostic <- function(output){
 
         temp_bin_dat <- temp_dat %>%
           filter(bin == unique(temp_dat$bin)[temp_bin])
-        lm_bin_temp <- lm(acc ~ step, data = temp_bin_dat)
+        lm_bin_temp <- suppressWarnings(suppress_message(lm(acc ~ step, data = temp_bin_dat)))
 
         diagnostic_push[[var]][['linear_fit']][[as.character(bin_label)]] <- broom::tidy(lm_bin_temp) %>%
           mutate(sig = case_when(
@@ -832,8 +845,8 @@ pai_diagnostic <- function(output){
             p.value <= 0.001 ~ '***'
           ))
 
-        base_plot <- base_plot +
-          geom_smooth(method = 'lm', formula = y ~ x, data = temp_bin_dat)
+        suppressWarnings(base_plot <- base_plot +
+          geom_smooth(method = 'lm', formula = y ~ x, data = temp_bin_dat))
 
 
       } #Calculate LM by Bins & Append to Base Plot
@@ -855,6 +868,50 @@ pai_diagnostic <- function(output){
   } #Linear Fit Across Bins
 
   {
+
+    bootstrap_accuracies <- data.frame(bootstrap_accuracy = output$bootstrap_predictions_CI)
+
+    bootstrap_accuracies <- bootstrap_accuracies %>%
+      mutate(median = median(bootstrap_accuracies$bootstrap_accuracy), #Median
+             mean = mean(bootstrap_accuracies$bootstrap_accuracy), #Mean
+             conf_lower = as.numeric(quantile(bootstrap_accuracies$bootstrap_accuracy, c((1 - 0.95) / 2, 1 - (1 - 0.95) / 2))[1]), #2.5%
+             conf_higher = as.numeric(quantile(bootstrap_accuracies$bootstrap_accuracy, c((1 - 0.95) / 2, 1 - (1 - 0.95) / 2))[2]), #97.5
+             max = max(bootstrap_accuracies$bootstrap_accuracy), #Max
+             min = min(bootstrap_accuracies$bootstrap_accuracy), #Min,
+             boostraps = nrow(bootstrap_accuracies))
+
+    mean_label <- paste0('Mean (', round(bootstrap_accuracies$mean[1], 2), ')')
+    median_label <- paste0('Mean (', round(bootstrap_accuracies$median[1], 2), ')')
+
+
+    bootstrap_ci_figure <- ggplot(data = bootstrap_accuracies, aes(x = bootstrap_accuracy)) +
+      geom_density(fill = 'gray50', colour = 'gray5') +
+      geom_vline(aes(xintercept = mean, colour = 'Mean', linetype = 'Mean')) +
+      geom_vline(aes(xintercept = median, colour = 'Median', linetype = 'Median')) +
+      geom_hline(yintercept = 0, colour = 'black') +
+      scale_x_continuous(lim = c(0,1), breaks = seq(0, 1, 0.25)) +
+      scale_colour_manual(name = " ",
+                          values = c('Mean' = 'gray5', 'Median' = 'gray5'),
+                          labels = c(mean_label, median_label)) +
+      scale_linetype_manual(name = " ",
+                            values = c('Mean' = "solid", 'Median' = "dashed"),
+                            labels = c(mean_label, median_label)) +
+      theme_minimal() +
+      labs(x = '\nAccuracy from Bootstrapped Test Sets',
+           y = '\n') +
+      theme(
+        panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
+        axis.text = element_text(size = 12, colour = 'black'),
+        axis.title = element_text(size = 12, colour = 'black'),
+        legend.position = 'bottom',
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10, colour = 'black'),
+        legend.key = element_rect(colour = "black")
+      )
+
+    diagnostics[['bootstrap']] <- list()
+    diagnostics$bootstrap[['bootstrap_output']] <- bootstrap_accuracies
+    diagnostics$bootstrap[['bootstrap_distribution']] <- bootstrap_ci_figure
 
   } #Confidence Intervals
 
