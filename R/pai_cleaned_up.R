@@ -1116,12 +1116,8 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
 
   } #If Diagnostic = 'bootstrap'
 
+  return(diagnostic_retrieved)
 
-  if(!type %in% c('data')){
-    return(plot(diagnostic_retrieved))
-  } else {
-    return(diagnostic_retrieved)
-  }
 
 } #Function to Retrieve Diagnostic Data/Figures
 
@@ -1132,12 +1128,12 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
 ################################################################################
 
 sandbox_data <- data.frame(
-  var1 = sample(0:1, 100, replace = TRUE),
-  var2 = sample(0:50, 100, replace = TRUE),
-  var3 = c(sample(0:1, 99, replace = TRUE), 2),
-  var4 = sample(0:50, 100, replace = TRUE),
-  var5 = sample(0:1, 100, replace = TRUE),
-  var6 = sample(0:50, 100, replace = TRUE)) #Sample Data (Sparse Data Probelm Introduced in Var3)
+  var1 = sample(0:1, 1000, replace = TRUE),
+  var2 = sample(0:50, 1000, replace = TRUE),
+  var3 = c(sample(0:1, 999, replace = TRUE), 2),
+  var4 = sample(0:50, 1000, replace = TRUE),
+  var5 = sample(0:1, 1000, replace = TRUE),
+  var6 = sample(0:50, 1000, replace = TRUE)) #Sample Data (Sparse Data Probelm Introduced in Var3)
 
 pai_test <- pai(data = sandbox_data,
             model = 'parRF',
@@ -1147,10 +1143,12 @@ pai_test <- pai(data = sandbox_data,
             cores = 5) #Test PAI Run
 
 
-pai_diagnostic_retrieval(output = pai_test,
+t <- pai_diagnostic_retrieval(output = pai_test,
+                         variables = NULL,
                          diagnostic = 'bootstrap',
                          type = 'figure',
                          combine_plots = T)
 
+plot(t)
 
 
