@@ -1,55 +1,24 @@
-# To Do:
-'
-1) Combine variable declarations:
-    - Combine Predictors, Factors, and Interactions
-    - Allow "assign factors" - but default to NULL (if change to not null or TRUE, then use it)
-    - Allow list_drop_vars
-    - Allow drop_vars declaration
-    - clean up ML declaration
+################################################################################
+# Predictions as Inference
+# Authors: Ben Johnson (Florida); Logan Strother (Purdue); Jake Truscott (CCSE)
+# Primary Routine & Dependencies
+# Code Developed by Jake S. Truscott
+################################################################################
 
-'
-
+################################################################################
+# Load Libraries
+################################################################################
 require(caret)
 require(dplyr)
 require(stringr)
 require(doParallel)
-require(segmented)
 require(broom)
+require(grid)
+require(gridExtra)
 
-sandbox_data <- data.frame(
-  var1 = sample(0:1, 100, replace = TRUE),
-  var2 = sample(0:50, 100, replace = TRUE),
-  var3 = c(sample(0:1, 99, replace = TRUE), 2),
-  var4 = sample(0:50, 100, replace = TRUE),
-  var5 = sample(0:1, 100, replace = TRUE),
-  var6 = sample(0:50, 100, replace = TRUE)
-
-)
-
-
-test <- pai(data = sandbox_data,
-            model = 'parRF',
-            outcome = 'var1',
-            predictors = NULL,
-            interactions = c('var4*var5'),
-            cores = 1)
-
-
-data = sandbox_data #Data
-model = 'parRF'  #Caret Model
-outcome = 'var1'  #DV
-predictors = NULL  #IVs
-interactions = c('var4*var5')  #Interactive Terms
-drop_vars = NULL  #Defaults to All
-cores = NULL  #Defaults to 1
-placebo_iterations = NULL  #Defaults to 10
-folds = NULL  #Defaults to 5
-train_split = 0.8  #Defaults to 80/20
-custom_tc = FALSE  #Defaults to Basic TC (3 Repeats  Assigned K-Folds  etc.)
-assign_factors = 3  #Defaults to 3 - Change to Any Number
-list_drop_vars = FALSE  #Defaults to FALSE
-seed = 1234
-
+################################################################################
+# Primary Routine Function
+################################################################################
 
 pai <- function(data, #Data
                 model = NULL, #Caret Model
@@ -65,7 +34,7 @@ pai <- function(data, #Data
                 assign_factors = 3, #Defaults to 3 - Change to Any Number
                 list_drop_vars = FALSE, #Defaults to FALSE
                 seed = 1234 #Defaults to 1234
-                ){
+){
 
 
   start_time <- Sys.time() #Start Time
@@ -73,55 +42,55 @@ pai <- function(data, #Data
           "\033[32m---------------------- Beginning PAI Process ----------------------\033[0m\n",
           "\033[34m-------------------------------------------------------------------\033[0m\n") #Start Message
 
-  output <- list() #Create Empty List to Store Output, Params, etc.
-
   set.seed(seed) #Set Random Seed (Defaults to 1234)
 
-  message("Initializing Parallel Environment with \033[37m", cores, " Core(s)") #Print Update
+  output <- list()
 
   parameters <- pai_params_wrapper(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed) #Compile Parameters from Input Declarations
+  output[['parameters']] <- parameters #Add Parameters to Output Object
 
-  doParallel::registerDoParallel(as.numeric(parameters$cores)) #Register Parallel Environment
+  print_parameters(parameters) #Print Parameters
 
-  #foreach(i = 1:cores, .export = c("declared_model", "dropping_vars", "pai_params_wrapper", "placebo_shuffle", "print_parameters", "push", "push_pred", "sparse_variable_check", "suppress_message", "parameters", "output", "bootstrap_predictions_ci", "pai_diagnostic")) %dopar% {
+  message("Initializing Parallel Environment with \033[37m", cores, " Core(s) \033[0m") #Print Update
 
+  cl <- makeCluster(as.numeric(parameters$cores)) #Allocate Cores
+  registerDoParallel(cl) #Register Parallel Environment
 
-    print_parameters(parameters) #Print Parameters
+  message("Beginning ", parameters$model) #Print Update
 
-    message('Beginning ', parameters$model) #Start Message for Declared Model
+  declared_model <- declared_model(parameters) #Return Declared ML Model
+  output[['declared_model']] <- declared_model #Add to
 
-    declared_model <- declared_model(parameters) #Return Declared ML Model
-    output[['declared_model']] <- declared_model #Add to
+  message('Beginning Placebo Iterations') #Start Message for Placebo Iterations
 
-    message('Beginning Placebo Iterations') #Start Message for Placebo Iterations
+  placebo <- placebo_shuffle(declared_model, parameters) #Run Placebo Iterations
+  output[['placebo']] <- placebo #Append to Output
 
-    placebo <- placebo_shuffle(declared_model, parameters) #Run Placebo Iterations
-    output[['placebo']] <- placebo #Append to Output
+  message('Beginning Variable Omissions') #Start Message for Placebo Iterations
 
-    message('Beginning Variable Omissions') #Start Message for Placebo Iterations
+  omitting_variables <- dropping_vars(parameters, output) #Run Omitting Vars
+  output[['omitting_variables']] <- omitting_variables #Append to Output
 
-    omitting_variables <- dropping_vars(parameters, output) #Run Omitting Vars
-    output[['omitting_variables']] <- omitting_variables #Append to Output
+  fit_change <- left_join(placebo, omitting_variables, by = 'var') #Create Fit Change Frame
+  output[['fit_change']] <- fit_change #Append to Output
 
-    fit_change <- left_join(placebo, omitting_variables, by = 'var') #Create Fit Change Frame
-    output[['fit_change']] <- fit_change #Append to Output
+  message('Compiling Bootstrapped Confidence Intervals') #Start Message for Placebo Iterations
 
-    message('Compiling Bootstrapped Confidence Intervals') #Start Message for Placebo Iterations
+  bootstrap_cis <- bootstrap_predictions_ci(output, parameters) #Compile Bootstrapped CIs from Predictions
+  output[['bootstrap_predictions_CI']] <- bootstrap_cis #Append to Output
 
-    bootstrap_cis <- bootstrap_predictions_ci(output, parameters) #Compile Bootstrapped CIs from Predictions
-    output[['bootstrap_predictions_CI']] <- bootstrap_cis #Append to Output
+  message('Beginning Push Protocol') #Start Message for Placebo Iterations
 
-    message('Beginning Push Protocol') #Start Message for Placebo Iterations
+  pusher <- push(output, parameters) #Push Protocol
+  output[['push']] <- pusher #Append to Output
 
-    pusher <- push(parameters, output) #Push Protocol
-    output[['push']] <- pusher #Append to Output
+  diagnostics <- pai_diagnostic(output) #Diagnostic Figures & Tables
+  output[['diagnostics']] <- diagnostics
 
-    output[['parameters']] <- parameters #Append Parameters to Output
+  output[['parameters']] <- parameters #Append Parameters to Output
 
-    diagnostics <- pai_diagnostic(output) #Diagnostic Figures & Tables
-    output[['diagnostics']] <- diagnostics
-
-  #}
+  stopCluster(cl) #Stop Cluster
+  registerDoSEQ() #Register Sequential Backend
 
   end_time <- Sys.time() #End Time
   completion_time_minutes<- as.numeric((difftime(end_time, start_time, units = "secs")/60)) #Completion Time
@@ -134,6 +103,10 @@ pai <- function(data, #Data
 
 } #Predictions as Inference Main Function
 
+
+################################################################################
+# Dependencies
+################################################################################
 
 pai_params_wrapper <- function(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed){
 
@@ -295,7 +268,7 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
       } #Get All Vars
 
       full_data <-  data %>%
-        dplyr::select(parameters$outcome, any_of(unlist(combined_vars))) #Get Full Data
+        select(parameters$outcome, any_of(unlist(combined_vars))) #Get Full Data
 
       if (!is.null(parameters$interactions)){
         for (interaction in unlist(parameters$interactions)){
@@ -480,18 +453,18 @@ sparse_variable_check <- function(parameters){
 
 print_parameters <- function(parameters){
 
-  message("\033[32m Model: \033[0m", "\033[33m", parameters$model, "\033[0m \n",
-          "\033[32m Outcome Variable: \033[0m", "\033[33m", parameters$outcome , "\033[0m \n",
-          "\033[32m Predictors: \033[0m", "\033[33m " , ifelse(length(unique(parameters$predictors) < 10), paste(parameters$predictors, collapse = " "), length(unique(parameters$predictors))), " \033[0m \n",
-          "\033[32m Interaction(s): \033[0m", "\033[33m", ifelse(is.null(parameters[['interactions']]), "None", paste(paste0('(', unlist(parameters$interactions), ')'), collapse = " ")), "\033[0m")
+  message("\033[32m Model: \033[0m", "\033[38m", parameters$model, "\033[0m \n",
+          "\033[32m Outcome Variable: \033[0m", "\033[38m", parameters$outcome , "\033[0m \n",
+          "\033[32m Predictors: \033[0m", "\033[38m " , ifelse(length(unique(parameters$predictors) < 10), paste(parameters$predictors, collapse = " "), length(unique(parameters$predictors))), " \033[0m \n",
+          "\033[32m Interaction(s): \033[0m", "\033[38m", ifelse(is.null(parameters[['interactions']]), "None", paste(paste0('(', unlist(parameters$interactions), ')'), collapse = " ")), "\033[0m")
 
   if (parameters$list_drop_vars == 'FALSE'){
-    message("\033[32m Variables to Drop: \033[0m", "\033[33m", ifelse(all(parameters$predictors %in% parameters$drop_vars), "All Predictors", unlist(parameters$drop_vars)), " \033[0m")
+    message("\033[32m Variables to Drop: \033[0m", "\033[38m", ifelse(all(parameters$predictors %in% parameters$drop_vars), "All Predictors", unlist(parameters$drop_vars)), " \033[0m")
   } else {
     message("\033[32m Variables to Drop: ", paste(paste0('(', unlist(parameters$list_drop_vars), ')'), collapse = " ") ," \033[0m")
   }
 
-    message("\033[32m Train/Test Split: \033[0m", "\033[33m", (parameters$train_split)*100, "/", 100-((parameters$train_split)*100), "\033[0m \n",
+    message("\033[32m Train/Test Split: \033[0m", "\033[38m", (parameters$train_split)*100, "/", 100-((parameters$train_split)*100), "\033[0m \n",
     "\033[32m Vars Dropped Due to Sparse Variance in Train/Test: \033[0m", "\033[31m", ifelse(is.null(parameters$sparse_factors), 'None', paste(unlist(paste0('(', parameters$sparse_factors, ')')), collapse = " ")), "\033[0m \n")
 
 
@@ -499,7 +472,7 @@ print_parameters <- function(parameters){
 
 declared_model <- function(parameters){
 
-  declared_model <- train(form = as.formula(parameters$base_formula),
+  declared_model <- caret::train(form = as.formula(parameters$base_formula),
                     data = data.frame(parameters$train_set),
                     metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
                     method = as.character(parameters$model),
@@ -531,7 +504,7 @@ placebo_shuffle <- function(declared_model, parameters){
       shuffled_predictions <- predict(declared_model, newdata = shuffle_data, na.action = na.pass) # Predict using the shuffled data
       accuracy_change <- mean(original_predictions != shuffled_predictions) # Calculate accuracy change
       placebo_temp <- data.frame(rep_count = rep, variable = var, accuracy_change = accuracy_change) # Store the accuracy change
-      placebos <- bind_rows(placebos, placebo_temp)
+      placebos <- dplyr::bind_rows(placebos, placebo_temp)
 
     } #For Var in Variables
 
@@ -543,7 +516,7 @@ placebo_shuffle <- function(declared_model, parameters){
   } #For Rep in Placebo Iterations
 
   placebo <- placebos %>%
-    dplyr::select(-c(rep_count)) %>%
+    select(-c(rep_count)) %>%
     rename(var = variable) %>%
     group_by(var) %>%
     summarize(mean_change = mean(accuracy_change),
@@ -602,7 +575,7 @@ dropping_vars <- function(parameters, output){
         temp_combination = temp_combination,
         dropped_var = temp_drop_var) #Collapse Into Single Temp DF
 
-      combinations <- bind_rows(combinations, temp_combination) #Add to Combinations Frame
+      combinations <- dplyr::bind_rows(combinations, temp_combination) #Add to Combinations Frame
 
     }
 
@@ -637,7 +610,7 @@ dropping_vars <- function(parameters, output){
       change_temp <- data.frame(var = temp_dropped_var,
                                 fit_change = (fit_original - fit_drop_var)) #Get Temp Frame for Fit Change
 
-      fit_change <- bind_rows(fit_change, change_temp) #Append to fit_change
+      fit_change <- dplyr::bind_rows(fit_change, change_temp) #Append to fit_change
 
       message("\033[37m           Completed Variable Omission For \033[0m", temp_combination_row$dropped_var) #Print Update
 
@@ -649,7 +622,9 @@ dropping_vars <- function(parameters, output){
 
 } #Omitting Variables
 
-push <- function(parameters, output){
+push <- function(output, parameters){
+
+  output <- output
 
   predictors <- parameters$predictors
   interactions <- parameters$interactions
@@ -686,14 +661,15 @@ push <- function(parameters, output){
                              var = ifelse(is_factor == TRUE, factor(temp_var), temp_var),
                              stepper = temp_step,
                              Z = data,
-                             outcome_type = parameters$outcome_type) #Calculate for Step[step]
+                             outcome_type = parameters$outcome_type,
+                             parameters = parameters) #Calculate for Step[step]
 
       temp_pred <- data.frame(
         step = temp_step,
         onecount = temp_pred[1],
         acc = temp_pred[2]) #Put Output in Temp DF
 
-      var_push_predictions <- bind_rows(var_push_predictions, temp_pred)
+      var_push_predictions <- dplyr::bind_rows(var_push_predictions, temp_pred)
 
     }
 
@@ -707,7 +683,7 @@ push <- function(parameters, output){
 
 } # Push + push_pred from Stepper
 
-push_pred <- function(mod, var, stepper, Z, outcome_type){
+push_pred <- function(mod, var, stepper, Z, outcome_type, parameters){
 
   if (outcome_type == 'Continuous'){
     Z[[var]] <- Z[[var]] + stepper
@@ -739,13 +715,14 @@ suppress_message <- function(expr){
 bootstrap_predictions_ci <- function(output, parameters){
 
   test_data = data.frame(parameters$test_set) #Grab Test Data
+  test_data = test_data[!names(test_data) %in% unlist(parameters$sparse_factors)]
   outcome_variable = parameters[['outcome']] #Set Outcome Var
 
   predictions <- predict(output$declared_model, newdata = test_data) #Get Base Predictions
   comparison_set <- data.frame(parameters$test_set)[outcome_variable][,1] #Set Real Data
   accuracy <- mean(predictions == comparison_set) #Get Predictive Accuracy from Predictions v. Real Data
 
-  bootstrap_accuracies <- numeric() #Create Empty List to Store Bootstrap Accuracies
+  bootstrap_output <- list() #Create Empty List to Store Bootstrap Outputs
 
   for (i in 1:100) {
     bootstrap_indices <- sample(nrow(test_data), replace = TRUE) #Generate Bootstrap Sample
@@ -753,18 +730,22 @@ bootstrap_predictions_ci <- function(output, parameters){
     bootstrap_test_data <- bootstrap_test_data[, !names(bootstrap_test_data) == parameters$outcome, drop = FALSE] #Remove DV
     bootstrap_predictions <- predict(output$declared_model, newdata = bootstrap_test_data) #Predict on Boostrap Sample
     bootstrap_accuracy <- mean(bootstrap_predictions == test_data[parameters[['outcome']]][bootstrap_indices,]) #Calculate Accuracy
-    bootstrap_accuracies[i] <- bootstrap_accuracy
+
+    bootstrap_output[[i]] <- list(boostrap_data = bootstrap_test_data,
+                                    bootstrap_accuracies = bootstrap_accuracy) #Append to List
+
   } #Compile Predictions from Bootstrapped Samples of Test Data
 
-  return(bootstrap_accuracies) #Return Summary
+  return(bootstrap_output) #Return Summary
 
 
 
-}
+} #Bootstrap CIs
 
 pai_diagnostic <- function(output){
 
-  diagnostics <- list()
+  diagnostics <- list() #Create Empty List to Store Outputs
+  parameters <- output$parameters #Grab Parameters
 
   {
 
@@ -830,24 +811,22 @@ pai_diagnostic <- function(output){
       temp_dat$bin <- cut_interval(as.numeric(temp_dat$step), n = breakpoints) #Assign Bins
 
       for (temp_bin in 1:length(unique(temp_dat$bin))){
-
         bin_label <- unique(temp_dat$bin)[temp_bin]
-
         temp_bin_dat <- temp_dat %>%
           filter(bin == unique(temp_dat$bin)[temp_bin])
-        lm_bin_temp <- suppressWarnings(suppress_message(lm(acc ~ step, data = temp_bin_dat)))
+        lm_bin_temp <- lm(acc ~ step, data = temp_bin_dat)
+        suppressWarnings({
+          diagnostic_push[[var]][['linear_fit']][[as.character(bin_label)]] <- broom::tidy(lm_bin_temp) %>%
+            mutate(sig = case_when(
+              .default = '',
+              p.value <= 0.05 & p.value > 0.01 ~ '*',
+              p.value <=0.01 & p.value > 0.001 ~ '**',
+              p.value <= 0.001 ~ '***'
+            ))
 
-        diagnostic_push[[var]][['linear_fit']][[as.character(bin_label)]] <- broom::tidy(lm_bin_temp) %>%
-          mutate(sig = case_when(
-            .default = '',
-            p.value <= 0.05 & p.value > 0.01 ~ '*',
-            p.value <=0.01 & p.value > 0.001 ~ '**',
-            p.value <= 0.001 ~ '***'
-          ))
-
-        suppressWarnings(base_plot <- base_plot +
-          geom_smooth(method = 'lm', formula = y ~ x, data = temp_bin_dat))
-
+          base_plot <- base_plot +
+            geom_smooth(method = 'lm', formula = y ~ x, data = temp_bin_dat)
+        })
 
       } #Calculate LM by Bins & Append to Base Plot
 
@@ -865,56 +844,313 @@ pai_diagnostic <- function(output){
 
     diagnostics[['push']] <- diagnostic_push
 
-  } #Linear Fit Across Bins
+  } #Linear Fit Across Bins (Push)
 
   {
 
-    bootstrap_accuracies <- data.frame(bootstrap_accuracy = output$bootstrap_predictions_CI)
-
-    bootstrap_accuracies <- bootstrap_accuracies %>%
-      mutate(median = median(bootstrap_accuracies$bootstrap_accuracy), #Median
-             mean = mean(bootstrap_accuracies$bootstrap_accuracy), #Mean
-             conf_lower = as.numeric(quantile(bootstrap_accuracies$bootstrap_accuracy, c((1 - 0.95) / 2, 1 - (1 - 0.95) / 2))[1]), #2.5%
-             conf_higher = as.numeric(quantile(bootstrap_accuracies$bootstrap_accuracy, c((1 - 0.95) / 2, 1 - (1 - 0.95) / 2))[2]), #97.5
-             max = max(bootstrap_accuracies$bootstrap_accuracy), #Max
-             min = min(bootstrap_accuracies$bootstrap_accuracy), #Min,
-             boostraps = nrow(bootstrap_accuracies))
-
-    mean_label <- paste0('Mean (', round(bootstrap_accuracies$mean[1], 2), ')')
-    median_label <- paste0('Mean (', round(bootstrap_accuracies$median[1], 2), ')')
-
-
-    bootstrap_ci_figure <- ggplot(data = bootstrap_accuracies, aes(x = bootstrap_accuracy)) +
-      geom_density(fill = 'gray50', colour = 'gray5') +
-      geom_vline(aes(xintercept = mean, colour = 'Mean', linetype = 'Mean')) +
-      geom_vline(aes(xintercept = median, colour = 'Median', linetype = 'Median')) +
-      geom_hline(yintercept = 0, colour = 'black') +
-      scale_x_continuous(lim = c(0,1), breaks = seq(0, 1, 0.25)) +
-      scale_colour_manual(name = " ",
-                          values = c('Mean' = 'gray5', 'Median' = 'gray5'),
-                          labels = c(mean_label, median_label)) +
-      scale_linetype_manual(name = " ",
-                            values = c('Mean' = "solid", 'Median' = "dashed"),
-                            labels = c(mean_label, median_label)) +
-      theme_minimal() +
-      labs(x = '\nAccuracy from Bootstrapped Test Sets',
-           y = '\n') +
-      theme(
-        panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
-        axis.text = element_text(size = 12, colour = 'black'),
-        axis.title = element_text(size = 12, colour = 'black'),
-        legend.position = 'bottom',
-        legend.title = element_blank(),
-        legend.text = element_text(size = 10, colour = 'black'),
-        legend.key = element_rect(colour = "black")
-      )
-
+    bootstrap_output <- output$bootstrap_predictions_CI #Get Bootstrap List Output
+    bootstrap_accuracies <- data.frame() #Create Empty DF to Create Combined Frame
     diagnostics[['bootstrap']] <- list()
-    diagnostics$bootstrap[['bootstrap_output']] <- bootstrap_accuracies
-    diagnostics$bootstrap[['bootstrap_distribution']] <- bootstrap_ci_figure
 
-  } #Confidence Intervals
+    {
+
+      for (i in 1:length(bootstrap_output)){
+
+        temp_bootstrap_data <- bootstrap_output[[i]]$boostrap_data #Get Temp Bootstrap Test Data
+
+        if (is.null(temp_bootstrap_data)){
+          next
+        } #Error Handling (Skip)
+
+        temp_bootstrap_accuracy <- bootstrap_output[[i]]$bootstrap_accuracies #Get Temp Accuracy
+        temp_bootstrap <- data.frame(temp_bootstrap_data, accuracy = temp_bootstrap_accuracy, bootstrap_id = i) #Combine
+        bootstrap_accuracies <- dplyr::bind_rows(bootstrap_accuracies, temp_bootstrap) #Append
+
+      }
+
+    } # Retrieve & Organization Bootstrap Data
+
+    {
+
+      bootstrap_distribution <- bootstrap_accuracies %>%
+        select(accuracy, bootstrap_id) %>%
+        unique() %>%
+        mutate(median = median(accuracy), #Median
+               mean = mean(accuracy), #Mean
+               conf_lower = as.numeric(quantile(accuracy, c((1 - 0.95) / 2, 1 - (1 - 0.95) / 2))[1]), #2.5%
+               conf_higher = as.numeric(quantile(accuracy, c((1 - 0.95) / 2, 1 - (1 - 0.95) / 2))[2]), #97.5
+               max = max(accuracy), #Max
+               min = min(accuracy), #Min,
+               boostraps = max(bootstrap_id))
+
+      mean_label <- paste0('Mean (', round(bootstrap_distribution$mean[1], 2), ')')
+      median_label <- paste0('Mean (', round(bootstrap_distribution$median[1], 2), ')')
+
+
+      bootstrap_ci_figure <- ggplot(data = bootstrap_distribution, aes(x = accuracy)) +
+        geom_density(fill = 'gray50', colour = 'gray5') +
+        geom_vline(aes(xintercept = mean, colour = 'Mean', linetype = 'Mean')) +
+        geom_vline(aes(xintercept = median, colour = 'Median', linetype = 'Median')) +
+        geom_hline(yintercept = 0, colour = 'black') +
+        scale_colour_manual(name = " ",
+                            values = c('Mean' = 'gray5', 'Median' = 'gray5'),
+                            labels = c(mean_label, median_label)) +
+        scale_linetype_manual(name = " ",
+                              values = c('Mean' = "solid", 'Median' = "dashed"),
+                              labels = c(mean_label, median_label)) +
+        theme_minimal() +
+        labs(x = '\nAccuracy from Bootstrapped Test Sets',
+             y = '\n') +
+        theme(
+          panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
+          axis.text = element_text(size = 12, colour = 'black'),
+          axis.title = element_text(size = 12, colour = 'black'),
+          legend.position = 'bottom',
+          legend.title = element_blank(),
+          legend.text = element_text(size = 10, colour = 'black'),
+          legend.key = element_rect(colour = "black")
+        )
+
+      diagnostics$bootstrap[['bootstrap_output']] <- bootstrap_accuracies
+      diagnostics$bootstrap[['bootstrap_distribution']] <- bootstrap_ci_figure
+
+    } #Density of Accuracies Figure
+
+    {
+
+      bootstrap_vars <- names(bootstrap_accuracies[!names(bootstrap_accuracies) %in% c('accuracy', 'bootstrap_id')])
+      diagnostics$bootstrap[['variable_figures']] <- list()
+
+      for (var in bootstrap_vars){
+
+        temp_var <- var
+
+        temp_var_bootstrap_data <- bootstrap_accuracies[, c(temp_var, 'accuracy', 'bootstrap_id')] %>%
+          group_by(.data[[var]]) %>%
+          summarise(mean_accuracy = mean(accuracy),
+                    lower_ci = mean_accuracy - 1.96 * sd(accuracy) / sqrt(n()),
+                    upper_ci = mean_accuracy + 1.96 * sd(accuracy) / sqrt(n()))
+
+        temp_var_bootstrap_figure <- ggplot(temp_var_bootstrap_data, aes(x = if (temp_var %in% unlist(parameters$factors)) factor(.data[[temp_var]]) else .data[[temp_var]], y = mean_accuracy)) +
+          geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.5) +
+          geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci, fill = "95% Confidence\nIntervals"), alpha = 0.2) +  # Add shaded region
+          geom_point(size = 2, aes(shape = 'Mean\nAccuracy'), fill = 'white') +  # Add points
+          theme_minimal() +
+          scale_fill_manual(values = 'deepskyblue3') +
+          scale_colour_manual(values = 'black') +
+          scale_shape_manual(values = 21) +
+          labs(x = paste0('\n', as.character(temp_var)),
+               y = '\n') +
+          theme(
+            panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
+            axis.text = element_text(size = 12, colour = 'black'),
+            axis.title = element_text(size = 12, colour = 'black'),
+            legend.position = 'bottom',
+            legend.title = element_blank(),
+            legend.text = element_text(size = 10, colour = 'black'),
+            legend.key = element_rect(colour = "black"))
+
+        if (!temp_var %in% unlist(parameters$factors)){
+          temp_var_bootstrap_figure <- temp_var_bootstrap_figure +
+            stat_smooth(method = 'loess', aes(colour = 'Locally Weighted Scatterplot\nSmoothing (LOESS) Fit w/ SEs'), linetype = 2)
+        }
+
+
+        diagnostics$bootstrap$variable_figures[[var]] <- temp_var_bootstrap_figure
+
+      }
+
+      diagnostics$bootstrap$variable_figures$var5
+
+
+    } # Confidence Intervals by Var
+
+
+  } #Confidence Intervals (Bootstrap)
 
   return(diagnostics)
 
 } # Diagnostic Plots & Stats
+
+################################################################################
+# Diagnostic Retrieval Tool
+################################################################################
+
+pai_diagnostic_retrieval <- function(output, #PAI Output Object
+                                     diagnostic, # placebo, push, or bootstrap
+                                     type, # data, figure, or distribution (bootstrap *ONLY*)
+                                     variables = NULL, # Variables to Declare
+                                     combine_plots = FALSE #Combine Figures (if multiple Variables Declared)
+                                     ){
+
+  diagnostic_output <- output$diagnostics[[diagnostic]] #diagnostic = 'placebo', 'push', 'bootstrap'
+
+  if (diagnostic == 'placebo'){
+
+    if (type == 'figure'){
+
+      if (is.null(variables)){
+        diagnostic_retrieved <- diagnostic_output #Returns Full Placebo Figure
+      } else {
+        diagnostic_retrieved <- diagnostic_output %+% subset(diagnostic_output$data, var %in% variables) #Returns Placebo Figure Filtered by Var(s)
+      } # If Variable(s) Declared
+
+
+    } else {
+
+      diagnostic_retrieved <- diagnostic_output$data #Returns Placebo Fit Data
+
+    } #If Type is Figure vs. Data
+
+  } #If Diagnostic = 'Placebo'
+
+  if (diagnostic == 'push'){
+
+    diagnostic_retrieved = list() #Initialize Empty List
+
+    if (is.null(variables)) {
+
+      push_vars <- names(diagnostic_output) #Get Var Names from Diagnostic[['push']]
+
+      for (var in 1:length(push_vars)){
+
+        temp_var = push_vars[var]
+
+        retrieval_type = ifelse(type == 'linear_fit', 'linear_fit', 'linear_plot')
+
+        temp_retrieval <- diagnostic_output[[temp_var]][[retrieval_type]]
+        diagnostic_retrieved[[as.character(temp_var)]] <- temp_retrieval
+
+      } # Grab Figure or Fit for Each Var
+
+    } else {
+
+      for (var in 1:length(variables)){
+
+        temp_var = variables[var]
+
+        retrieval_type = ifelse(type == 'data', 'linear_fit', 'linear_plot')
+
+        temp_var = variables[var]
+        temp_retrieval <- diagnostic_output[[temp_var]][[retrieval_type]]
+        diagnostic_retrieved[[as.character(temp_var)]] <- temp_retrieval
+
+      }
+
+    } #If No Variables Declared - Return All
+
+    if (combine_plots == TRUE){
+
+      titles_vector = names(diagnostic_retrieved)
+
+      diagnostic_figure_retrieved <- diagnostic_retrieved
+
+
+      for (i in seq_along(diagnostic_figure_retrieved)) {
+        diagnostic_figure_retrieved[[i]] <- arrangeGrob(
+          diagnostic_figure_retrieved[[i]],
+          top = textGrob(titles_vector[i], gp = gpar(fontsize = 14))
+        )
+      } # Add Var-Level Titles
+
+
+
+      # Arrange plots on a grid
+      diagnostic_retrieved <- grid.arrange(grobs = diagnostic_figure_retrieved)
+
+
+
+      } #If combine_plots = TRUE, Combine Them to Single Plot and Return Plot (Else, Return List of Figures)
+
+
+  } #If Diagnostic is 'Push'
+
+  if (diagnostic == 'bootstrap'){
+
+    if (type == 'data'){
+      diagnostic_retrieved <- diagnostic_output$bootstrap_output
+    } #If Type is Bootstrap Data Output
+
+    if (type == 'distribution'){
+      diagnostic_retrieved <- diagnostic_output$bootstrap_distribution
+    } # If Type is Distribution Figure
+
+    if (type == 'figure'){
+
+      if (is.null(variables)){
+        bootstrap_vars = names(diagnostic_output$bootstrap_output[!names(diagnostic_output$bootstrap_output) %in% c('accuracy', 'bootstrap_id')])
+      } else {
+        bootstrap_vars = variables
+      } # If Variables = NULL, Get Vars from Boostrap Output Data
+
+      diagnostic_retrieved <- list() # Initialize Empty List for Figures
+
+      for (var in 1:length(bootstrap_vars)){
+        diagnostic_retrieved[[bootstrap_vars[var]]] <- diagnostic_output$variable_figures[[bootstrap_vars[var]]]
+
+      } #Collect Figures by Var
+
+      if (combine_plots == TRUE){
+
+        g_legend <- function(a.gplot) {
+          tmp <- ggplot_gtable(ggplot_build(a.gplot))
+          leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+          legend <- tmp$grobs[[leg]]
+          return(legend)
+        } #Get Legend Function
+
+        legend <- g_legend(diagnostic_retrieved[[1]]) #Get Legend from First Plot
+
+        for (i in 1:length(diagnostic_retrieved)){
+          temp_figure <-  diagnostic_retrieved[[i]] +  guides(shape = 'none', fill = 'none', colour = 'none')
+          diagnostic_retrieved[[i]] <- temp_figure
+          }
+
+        diagnostic_retrieved <- grid.arrange(arrangeGrob(grobs = diagnostic_retrieved, ncol = round(length(diagnostic_retrieved)/2, 0)), legend, heights = c(10, 1))
+
+
+
+      } #If combine_plots = TRUE, Combine Them to Single Plot and Return Plot (Else, Return List of Figures)
+
+    } #If Type is Var Figure
+
+  } #If Diagnostic = 'bootstrap'
+
+
+  if(!type %in% c('data')){
+    return(plot(diagnostic_retrieved))
+  } else {
+    return(diagnostic_retrieved)
+  }
+
+} #Function to Retrieve Diagnostic Data/Figures
+
+
+
+################################################################################
+# Sample Run - Sandbox Data
+################################################################################
+
+sandbox_data <- data.frame(
+  var1 = sample(0:1, 100, replace = TRUE),
+  var2 = sample(0:50, 100, replace = TRUE),
+  var3 = c(sample(0:1, 99, replace = TRUE), 2),
+  var4 = sample(0:50, 100, replace = TRUE),
+  var5 = sample(0:1, 100, replace = TRUE),
+  var6 = sample(0:50, 100, replace = TRUE)) #Sample Data (Sparse Data Probelm Introduced in Var3)
+
+pai_test <- pai(data = sandbox_data,
+            model = 'parRF',
+            outcome = 'var1',
+            predictors = NULL,
+            interactions = c('var4*var5'),
+            cores = 5) #Test PAI Run
+
+
+pai_diagnostic_retrieval(output = pai_test,
+                         diagnostic = 'bootstrap',
+                         type = 'figure',
+                         combine_plots = T)
+
+
+
