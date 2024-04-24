@@ -14,6 +14,8 @@ require(stringr)
 require(doParallel)
 require(broom)
 require(cowplot)
+require(grid)
+require(gridExtra)
 
 ################################################################################
 # Primary Routine Function
@@ -1007,22 +1009,7 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
 
     diagnostic_retrieved = list() #Initialize Empty List
 
-    if (is.null(variables)) {
-
-      push_vars <- names(diagnostic_output) #Get Var Names from Diagnostic[['push']]
-
-      for (var in 1:length(push_vars)){
-
-        temp_var = push_vars[var]
-
-        retrieval_type = ifelse(type == 'linear_fit', 'linear_fit', 'linear_plot')
-
-        temp_retrieval <- diagnostic_output[[temp_var]][[retrieval_type]]
-        diagnostic_retrieved[[as.character(temp_var)]] <- temp_retrieval
-
-      } # Grab Figure or Fit for Each Var
-
-    } else {
+    if (!is.null(variables)){
 
       for (var in 1:length(variables)){
 
@@ -1036,7 +1023,22 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
 
       }
 
-    } #If No Variables Declared - Return All
+    } else {
+
+      variables <- names(diagnostic_output)
+      vars <- names(diagnostic_output) #Get Var Names from Diagnostic[['push']]
+
+      for (var in 1:length(vars)){
+
+        temp_var = vars[var]
+
+        retrieval_type = ifelse(type == 'linear_fit', 'linear_fit', 'linear_plot')
+
+        temp_retrieval <- diagnostic_output[[temp_var]][[retrieval_type]]
+        diagnostic_retrieved[[as.character(temp_var)]] <- temp_retrieval
+
+      } # Grab Figure or Fit for Each Var
+    }  #If No Variables Declared - Return All
 
     if (combine_plots == TRUE){
 
@@ -1059,7 +1061,7 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
 
 
       diagnostic_retrieved <- cowplot::plot_grid(plotlist = diagnostic_figure_retrieved,
-                         ncol = round(length(push_vars)/2, 0),
+                         ncol = round(length(variables)/2, 0),
                          scale = 0.9) # Arrange plots on a grid
 
 
@@ -1163,13 +1165,13 @@ pai_test <- pai(data = sandbox_data,
             cores = 1) #Test PAI Run
 
 
-t <- pai_diagnostic_retrieval(output = pai_test,
-                         variables = NULL,
-                         diagnostic = 'bootstrap',
+pai_diagnostic_retrieval(output = pai_test,
+                         diagnostic = 'push',
                          type = 'figure',
-                         combine_plots = T)
+                         combine_plots = T,
+                         variables = c('var2', 'var4', 'var6'))
 
 
-t
+
 
 

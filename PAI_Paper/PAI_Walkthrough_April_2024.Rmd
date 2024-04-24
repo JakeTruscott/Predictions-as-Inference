@@ -1,30 +1,16 @@
 ---
 title: "PAI Walkthrough"
-author: "Jake S. Truscott"
-date: "`r Sys.Date()`"
 output: html_document
+date: "Updated April 2024"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+```
 
-require(caret)
-require(dplyr)
-require(stringr)
-require(doParallel)
-require(broom)
-require(grid)
-require(gridExtra)
+```{r core function, include = FALSE}
 
-sandbox_data <- data.frame(
-  var1 = sample(0:1, 100, replace = TRUE),
-  var2 = sample(0:50, 100, replace = TRUE),
-  var3 = c(sample(0:1, 99, replace = TRUE), 2),
-  var4 = sample(0:50, 100, replace = TRUE),
-  var5 = sample(0:1, 100, replace = TRUE),
-  var6 = sample(0:50, 1000, replace = TRUE))
-
-pai_function <- function(data, #Data
+pai <- function(data, #Data
                 model = NULL, #Caret Model
                 outcome = NULL, #DV
                 predictors = NULL, #IVs
@@ -107,7 +93,9 @@ pai_function <- function(data, #Data
 
 } #Predictions as Inference Main Function
 
+```
 
+```{r dependency functions, include = FALSE}
 pai_params_wrapper <- function(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed){
 
   {
@@ -1004,22 +992,7 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
 
     diagnostic_retrieved = list() #Initialize Empty List
 
-    if (is.null(variables)) {
-
-      push_vars <- names(diagnostic_output) #Get Var Names from Diagnostic[['push']]
-
-      for (var in 1:length(push_vars)){
-
-        temp_var = push_vars[var]
-
-        retrieval_type = ifelse(type == 'linear_fit', 'linear_fit', 'linear_plot')
-
-        temp_retrieval <- diagnostic_output[[temp_var]][[retrieval_type]]
-        diagnostic_retrieved[[as.character(temp_var)]] <- temp_retrieval
-
-      } # Grab Figure or Fit for Each Var
-
-    } else {
+    if (!is.null(variables)){
 
       for (var in 1:length(variables)){
 
@@ -1033,7 +1006,22 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
 
       }
 
-    } #If No Variables Declared - Return All
+    } else {
+
+      variables <- names(diagnostic_output)
+      vars <- names(diagnostic_output) #Get Var Names from Diagnostic[['push']]
+
+      for (var in 1:length(vars)){
+
+        temp_var = vars[var]
+
+        retrieval_type = ifelse(type == 'linear_fit', 'linear_fit', 'linear_plot')
+
+        temp_retrieval <- diagnostic_output[[temp_var]][[retrieval_type]]
+        diagnostic_retrieved[[as.character(temp_var)]] <- temp_retrieval
+
+      } # Grab Figure or Fit for Each Var
+    }  #If No Variables Declared - Return All
 
     if (combine_plots == TRUE){
 
@@ -1041,6 +1029,11 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
 
       diagnostic_figure_retrieved <- diagnostic_retrieved
 
+      for (i in 1:length(diagnostic_retrieved)){
+        diagnostic_figure_retrieved[[i]]$labels$x = ''
+        diagnostic_figure_retrieved[[i]]$labels$y = ''
+
+      } #Remove Legends
 
       for (i in seq_along(diagnostic_figure_retrieved)) {
         diagnostic_figure_retrieved[[i]] <- arrangeGrob(
@@ -1050,11 +1043,14 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
       } # Add Var-Level Titles
 
 
+      diagnostic_retrieved <- cowplot::plot_grid(plotlist = diagnostic_figure_retrieved,
+                         ncol = round(length(variables)/2, 0),
+                         scale = 0.9) # Arrange plots on a grid
 
-      # Arrange plots on a grid
-      diagnostic_retrieved <- grid.arrange(grobs = diagnostic_figure_retrieved)
 
-
+      diagnostic_retrieved <- diagnostic_retrieved +
+        draw_label("Step", x=0.5, y=  0, vjust=-1, angle= 0) +
+        draw_label("Predicted Accuracy", x=  0, y=0.5, vjust= 1, angle=90)
 
       } #If combine_plots = TRUE, Combine Them to Single Plot and Return Plot (Else, Return List of Figures)
 
@@ -1100,9 +1096,22 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
         for (i in 1:length(diagnostic_retrieved)){
           temp_figure <-  diagnostic_retrieved[[i]] +  guides(shape = 'none', fill = 'none', colour = 'none')
           diagnostic_retrieved[[i]] <- temp_figure
-          }
+          } #Remove Legends
 
-        diagnostic_retrieved <- grid.arrange(arrangeGrob(grobs = diagnostic_retrieved, ncol = round(length(diagnostic_retrieved)/2, 0)), legend, heights = c(10, 1))
+        {
+
+          x_label = diagnostic_retrieved[[1]]$labels$x
+          y_label = diagnostic_retrieved[[1]]$labels$y
+
+        } #Grab Labels
+
+        temp_figure <- cowplot::plot_grid(plotlist = diagnostic_retrieved,
+                                label_x = x_label,
+                                label_y = y_label)
+
+        legend_below <- cowplot::plot_grid(NULL, legend, nrow = 2, align = 'v')
+
+        diagnostic_retrieved <- cowplot::plot_grid(temp_figure, legend_below, ncol = 1, rel_heights = c(4, 1))
 
 
 
@@ -1113,18 +1122,30 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
   } #If Diagnostic = 'bootstrap'
 
   return(diagnostic_retrieved)
-  
+
 
 } #Function to Retrieve Diagnostic Data/Figures
 
+```
+
+```{r dependency libraries, include = FALSE}
+
+require(caret)
+require(dplyr)
+require(stringr)
+require(doParallel)
+require(broom)
+require(cowplot)
+require(gridExtra)
+require(grid)
 
 ```
 
 ## **Predictions as Inference**
 
-```{r, echo = F}
+```{r PAI Function Main, eval = F}
 pai <- function(data, 
-                model = NULL,
+                model = NULL, 
                 outcome = NULL,
                 predictors = NULL, 
                 interactions = NULL, 
@@ -1160,77 +1181,90 @@ pai <- function(data,
 
 #### **Sandbox Data**
 
-```{r}
+```{r sandbox data, eval = T}
 sandbox_data <- data.frame(
   var1 = sample(0:1, 100, replace = TRUE),
   var2 = sample(0:50, 100, replace = TRUE),
   var3 = c(sample(0:1, 99, replace = TRUE), 2),
   var4 = sample(0:50, 100, replace = TRUE),
   var5 = sample(0:1, 100, replace = TRUE),
-  var6 = sample(0:50, 1000, replace = TRUE))
+  var6 = sample(0:50, 100, replace = TRUE))
 ```
 
 *Note*: Introduced sparse data problem with `var3` -- Routine will know to omit variable and any interactions containing the variable, same with any variable where there is sparse data variance in train/test split.
 
 #### **Test Run**
 
-```{r echo=TRUE, message=FALSE, warning=FALSE}
-pai_test <- pai_function(data = sandbox_data,
+```{r PAI Test Run, echo=TRUE, message=FALSE, warning=FALSE}
+pai_test <- pai(data = sandbox_data,
             model = 'parRF',
             outcome = 'var1',
             predictors = NULL,
             interactions = c('var4*var5'),
-            cores = 5) #Test PAI Run
+            cores = 1) 
 
 ```
 
-```{r echo=F, fig.align='center'}
-knitr::include_graphics("C:/Users/Jake Truscott/Desktop/output.png")
+#### **Diagnostic Output Retrieval**
+
+```{r PAI Function, eval = F}
+
+pai_diagnostic_retrieval <- function(output, 
+                                     diagnostic, 
+                                     type, 
+                                     variables = NULL, 
+                                     combine_plots = FALSE){...}
 ```
 
-<br>
+-   `output` PAI Object (ex: ```pai_test```)
+-   `diagnostic` PAI sequence to retrieve. Options: ```push```, ```placebo```, or ```bootstrap```.
+-   `type` Type of diagnostic to retrieve. Options: ```figure```, ```data```, or ```distribution``` (*bootstrap only*)
+-   `variables` Vector of variable names to filter diagnostic (ex: ```c('var2', 'var3')```). Defaults to *all*
+-   `combine_plots` If `TRUE`, Returns multi-variable diagnostic figures as a single object using `cowplot` (CRAN). 
 
-#### **Diagnostic Output**
 
 ##### **Placebo Iterations**
 
-```{r echo=FALSE}
+```{r placebo figure, echo=TRUE}
 
-plot(pai_diagnostic_retrieval(output = pai_test, 
+pai_diagnostic_retrieval(output = pai_test, 
                          diagnostic = 'placebo', 
-                         type = 'figure'))
+                         type = 'figure')
 
 ```
 
 ##### **Push Protocol**
 
-```{r echo=FALSE}
+```{r push figure, echo=TRUE}
 
 pai_diagnostic_retrieval(output = pai_test, 
                          diagnostic = 'push', 
-                         type = 'figure', 
-                         combine_plots = T, 
-                         variables = c('var2', 'var4'))
+                         type = 'figure',
+                         combine_plots = TRUE, 
+                         variables = c('var2', 'var4', 'var6'))
 
 ```
 
-##### **Bootstrap Confidence Intervals**
+*Note*: Output subset to `var2`, `var4`, and `var6`. 
 
-###### **Var-Level Confidence Intervals**
+##### **Bootstrap Distribution**
 
-```{r}
+```{r boostrap distribution figure, echo=TRUE}
+
 pai_diagnostic_retrieval(output = pai_test, 
                          diagnostic = 'bootstrap', 
-                         type = 'figure', 
-                         combine_plots = T, 
-                         variables = c('var2', 'var4'))
+                         type = 'distribution',
+                         combine_plots = TRUE)
+
 ```
 
-###### **Density of Bootstrap Accuracies**
+##### **Bootstrap Variable-Level**
 
-```{r}
-plot(pai_diagnostic_retrieval(output = pai_test, 
+```{r boostrap variables figure, echo=TRUE}
+
+pai_diagnostic_retrieval(output = pai_test, 
                          diagnostic = 'bootstrap', 
-                         type = 'distribution', 
-                         combine_plots = T))
+                         type = 'figure',
+                         combine_plots = TRUE)
+
 ```
