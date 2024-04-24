@@ -13,8 +13,7 @@ require(dplyr)
 require(stringr)
 require(doParallel)
 require(broom)
-require(grid)
-require(gridExtra)
+require(cowplot)
 
 ################################################################################
 # Primary Routine Function
@@ -1045,6 +1044,11 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
 
       diagnostic_figure_retrieved <- diagnostic_retrieved
 
+      for (i in 1:length(diagnostic_retrieved)){
+        diagnostic_figure_retrieved[[i]]$labels$x = ''
+        diagnostic_figure_retrieved[[i]]$labels$y = ''
+
+      } #Remove Legends
 
       for (i in seq_along(diagnostic_figure_retrieved)) {
         diagnostic_figure_retrieved[[i]] <- arrangeGrob(
@@ -1054,11 +1058,14 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
       } # Add Var-Level Titles
 
 
+      diagnostic_retrieved <- cowplot::plot_grid(plotlist = diagnostic_figure_retrieved,
+                         ncol = round(length(push_vars)/2, 0),
+                         scale = 0.9) # Arrange plots on a grid
 
-      # Arrange plots on a grid
-      diagnostic_retrieved <- grid.arrange(grobs = diagnostic_figure_retrieved)
 
-
+      diagnostic_retrieved <- diagnostic_retrieved +
+        draw_label("Step", x=0.5, y=  0, vjust=-1, angle= 0) +
+        draw_label("Predicted Accuracy", x=  0, y=0.5, vjust= 1, angle=90)
 
       } #If combine_plots = TRUE, Combine Them to Single Plot and Return Plot (Else, Return List of Figures)
 
@@ -1104,9 +1111,22 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
         for (i in 1:length(diagnostic_retrieved)){
           temp_figure <-  diagnostic_retrieved[[i]] +  guides(shape = 'none', fill = 'none', colour = 'none')
           diagnostic_retrieved[[i]] <- temp_figure
-          }
+          } #Remove Legends
 
-        diagnostic_retrieved <- grid.arrange(arrangeGrob(grobs = diagnostic_retrieved, ncol = round(length(diagnostic_retrieved)/2, 0)), legend, heights = c(10, 1))
+        {
+
+          x_label = diagnostic_retrieved[[1]]$labels$x
+          y_label = diagnostic_retrieved[[1]]$labels$y
+
+        } #Grab Labels
+
+        temp_figure <- cowplot::plot_grid(plotlist = diagnostic_retrieved,
+                                label_x = x_label,
+                                label_y = y_label)
+
+        legend_below <- cowplot::plot_grid(NULL, legend, nrow = 2, align = 'v')
+
+        diagnostic_retrieved <- cowplot::plot_grid(temp_figure, legend_below, ncol = 1, rel_heights = c(4, 1))
 
 
 
@@ -1128,19 +1148,19 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
 ################################################################################
 
 sandbox_data <- data.frame(
-  var1 = sample(0:1, 1000, replace = TRUE),
-  var2 = sample(0:50, 1000, replace = TRUE),
-  var3 = c(sample(0:1, 999, replace = TRUE), 2),
-  var4 = sample(0:50, 1000, replace = TRUE),
-  var5 = sample(0:1, 1000, replace = TRUE),
-  var6 = sample(0:50, 1000, replace = TRUE)) #Sample Data (Sparse Data Probelm Introduced in Var3)
+  var1 = sample(0:1, 100, replace = TRUE),
+  var2 = sample(0:50, 100, replace = TRUE),
+  var3 = c(sample(0:1, 99, replace = TRUE), 2),
+  var4 = sample(0:50, 100, replace = TRUE),
+  var5 = sample(0:1, 100, replace = TRUE),
+  var6 = sample(0:50, 100, replace = TRUE)) #Sample Data (Sparse Data Probelm Introduced in Var3)
 
 pai_test <- pai(data = sandbox_data,
             model = 'parRF',
             outcome = 'var1',
             predictors = NULL,
             interactions = c('var4*var5'),
-            cores = 5) #Test PAI Run
+            cores = 1) #Test PAI Run
 
 
 t <- pai_diagnostic_retrieval(output = pai_test,
@@ -1149,6 +1169,7 @@ t <- pai_diagnostic_retrieval(output = pai_test,
                          type = 'figure',
                          combine_plots = T)
 
-plot(t)
+
+t
 
 
