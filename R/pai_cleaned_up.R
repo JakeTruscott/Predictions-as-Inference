@@ -389,7 +389,6 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
     } #Create Formula (+ Message for What Was Tossed b/c Sparse)
 
 
-
   } #Create Data, Test/Train Split & Formula -- Remove Sparse Vars
 
   return(parameters)
@@ -401,7 +400,7 @@ sparse_variable_check <- function(parameters){
   data = parameters$full_data
   dv = parameters$outcome
   variables = unlist(parameters$predictors)
-  test_data = data.frame(parameters$test_set)
+  test_data = data.frame(parameters$test_set, check.names = F)
   train_data = data.frame(parameters$train_set)
   factor_level_min = parameters$assign_factors
 
@@ -494,14 +493,59 @@ placebo_shuffle <- function(declared_model, parameters){
     variables <- c(unlist(parameters$predictors), unlist(parameters$interactions))
   }  # Get Variables
 
-  original_predictions <- predict(declared_model, data.frame(parameters$test_set), na.action = na.pass)
+
+  original_predictions <- predict(declared_model, data.frame(parameters$test_set, check.names = F), na.action = na.pass)
 
   for (rep in 1:as.numeric(parameters$placebo_iterations)){
 
     for (var in variables){
 
-      shuffle_data <- data.frame(parameters$test_set) #Get Test Data
-      shuffle_data[[var]] <- sample(shuffle_data[[var]]) # Shuffle the variable
+      shuffle_data <- data.frame(parameters$test_set, check.names = F) #Get Test Data
+      interaction_vars <- c()
+
+      if (grepl('(\\*|\\:)', var)){
+        interaction_vars <- unlist(stringr::str_split(var, pattern = c('\\*', '\\:')))
+        vars_to_shuffle <- c(unique(interaction_vars, var))
+        vars_to_shuffle <- vars_to_shuffle[!grepl('(\\*|\\:)', vars_to_shuffle)]
+        interaction_temp <- list()
+        for (interaction in 1:length(interaction_terms)){
+          interaction_temp[[interaction]] <- str_split(interaction_terms[interaction], pattern = c('\\*', '\\:'))[1]
+        }
+        interaction_vars <- interaction_temp
+        # Condition 1: Interaction Term (Shuffle Interaction & All Associated Vars)
+      } else {
+
+        associated_vars <- variables[grepl(var, variables)] #Get All Vars where Var Appears (i.e., Check if Part of Interaction)
+        vars_to_shuffle <- associated_vars
+
+        if (length(associated_vars) == 1){
+          vars_to_shuffle <- var #Condition 2: If Var Is Not Part of Interaction, Only Shuffle Var
+
+        } else {
+
+          vars_to_shuffle <- var
+          interaction_terms <- associated_vars[!associated_vars == var]
+          interaction_vars <- list()
+          for (interaction in 1:length(interaction_terms)){
+            interaction_vars[[interaction]] <- str_split(interaction_terms[interaction], pattern = c('\\*', '\\:'))[1]
+          }
+
+        } # Condition 3: If Var Found In Interaction, Shuffle Var and Recompile Interaction
+
+      } #Conditions to Determine Which Vars to Shuffle
+
+      for (var_name in vars_to_shuffle) {
+        shuffle_data[[var_name]] <- sample(shuffle_data[[var_name]])
+      } #Shuffle Any & All Vars Included in Shuffle
+
+      if (!is.null(interaction_vars)){
+        for (interaction in 1:length(interaction_vars)){
+          t <- interaction_vars[[interaction]][[1]]
+          shuffle_data[interaction_terms[interaction]] <- apply(shuffle_data[, t], 1, prod)
+        }
+      } #Shuffle if Interaction Included in Vars
+
+
       shuffled_predictions <- predict(declared_model, newdata = shuffle_data, na.action = na.pass) # Predict using the shuffled data
       accuracy_change <- mean(original_predictions != shuffled_predictions) # Calculate accuracy change
       placebo_temp <- data.frame(rep_count = rep, variable = var, accuracy_change = accuracy_change) # Store the accuracy change
@@ -715,8 +759,23 @@ suppress_message <- function(expr){
 
 bootstrap_predictions_ci <- function(output, parameters){
 
-  test_data = data.frame(parameters$test_set) #Grab Test Data
+  test_data = data.frame(parameters$test_set, check.names = F) #Grab Test Data
   test_data = test_data[!names(test_data) %in% unlist(parameters$sparse_factors)]
+
+  for (var in 1:ncol(test_data)){
+    temp_column <- data.frame(test_data[,var])
+    names(temp_column)[1] <- names(test_data[var])
+    colon_check <- gsub('\\.', ':', names(test_data[var]))
+    asterisk_check <- gsub('\\.', '*', names(test_data[var]))
+    if (colon_check %in% unlist(parameters$interactions)){
+      names(test_data)[var] <- colon_check
+    }
+    if (asterisk_check %in% unlist(parameters$interactions)){
+      names(test_data)[var] = asterisk_check
+    }
+  } #Fix Boostrap Column Names
+
+
   outcome_variable = parameters[['outcome']] #Set Outcome Var
 
   predictions <- predict(output$declared_model, newdata = test_data) #Get Base Predictions
@@ -758,12 +817,12 @@ pai_diagnostic <- function(output){
         mutate(var_numeric = 1:nrow(.)) %>%
         mutate(var = ifelse(grepl("\\*", var), gsub("\\*", " x\n", var), var)) %>%
         ggplot(aes(x = factor(var))) +
-        geom_hline(yintercept = 0, linetype = 2, linewidth = 1.1) +
-        geom_point(aes(y = fit_change, colour = 'Prediction from Model Fit\nAfter Dropping Information'), size = 3, shape = 10) +
+        geom_hline(yintercept = 0, linetype = 2, linewidth = 1) +
         geom_rect(aes(xmin = var_numeric - 0.15, xmax = var_numeric + 0.15,
                       ymin = min_change, ymax = max_change, fill = 'Range of Predicted\nAccuracy from Placebos'), colour = 'gray5') +
         geom_rect(aes(xmin = var_numeric - 0.15, xmax = var_numeric + 0.15,
                       ymin = lower_bound, ymax = upper_bound, fill = '95% Confidence\nInterval'), colour = 'gray5') +
+        geom_point(aes(y = fit_change, colour = 'Prediction from Model Fit\nAfter Dropping Information'), size = 3, shape = 10) +
         labs(y = ' ',
              x = '\nVariable\n',
              fill = ' ',
@@ -786,8 +845,9 @@ pai_diagnostic <- function(output){
   {
 
     linear_vars <- output$fit_change$var
-
+    parameters <- output$parameters
     push_output <- output$push #Grab Push Output
+    original_test_data <- data.frame(parameters$test_set, check.names = F)
 
     diagnostic_push <- list() #Create Empty List for Output
 
@@ -798,6 +858,7 @@ pai_diagnostic <- function(output){
     for (var in linear_vars){
 
       temp_dat <- push_output[[var]] #Grab Temp Var
+
 
       if (var %in% c(unlist(output$parameters$factors))){
         base_plot <- ggplot(data = temp_dat, aes(x = factor(step), y = acc)) +
@@ -831,7 +892,7 @@ pai_diagnostic <- function(output){
 
       } #Calculate LM by Bins & Append to Base Plot
 
-      diagnostic_push[[var]][['linear_plot']] <- base_plot +
+      base_plot <- base_plot +
         theme_minimal() +
         labs(x = '\nStep\n',
              y = '\nAccuracy\n') +
@@ -839,7 +900,10 @@ pai_diagnostic <- function(output){
           panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
           axis.text = element_text(size = 12, colour = 'black'),
           axis.title = element_text(size = 12, colour = 'black')
-        )
+        ) #Create base Plot
+
+      diagnostic_push[[var]][['linear_plot']] <- base_plot #Combine and Store
+
 
     } #By Var - Calculate Linear Fit & Plot
 
@@ -1162,14 +1226,14 @@ pai_test <- pai(data = sandbox_data,
             outcome = 'var1',
             predictors = NULL,
             interactions = c('var4*var5'),
-            cores = 1) #Test PAI Run
+            cores = 5) #Test PAI Run
 
 
 pai_diagnostic_retrieval(output = pai_test,
                          diagnostic = 'push',
                          type = 'figure',
                          combine_plots = T,
-                         variables = c('var2', 'var4', 'var6'))
+                         variables = 'var5')
 
 
 
