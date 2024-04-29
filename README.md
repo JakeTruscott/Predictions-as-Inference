@@ -11,7 +11,7 @@ This is a package designed for use in ```R``` that allows for the implementation
 
 
 ## *Notice* 
-This package is currently in development (as of March 2024). For early access, use:
+This package is currently in development (as of April 2024). For early access, use:
 
 ```
 remotes::install_github("JakeTruscott/predictions-as-inference")

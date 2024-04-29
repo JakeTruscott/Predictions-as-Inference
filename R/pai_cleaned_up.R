@@ -88,8 +88,6 @@ pai <- function(data, #Data
   diagnostics <- pai_diagnostic(output) #Diagnostic Figures & Tables
   output[['diagnostics']] <- diagnostics
 
-  output[['parameters']] <- parameters #Append Parameters to Output
-
   stopCluster(cl) #Stop Cluster
   registerDoSEQ() #Register Sequential Backend
 
@@ -186,12 +184,18 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
       parameters[['assign_factors']] <- as.numeric(assign_factors)
     } #Assign Factor Floor (Default to 4)
 
+    if (is.null(drop_vars)){
+      parameters[['drop_vars']] <- c(parameters$predictors)
+    }  #If Drop Vars is Null - Default to predictors
+
+    parameters[['list_drop_vars']] <- list_drop_vars
 
     if (list_drop_vars == FALSE){
-      parameters[['list_drop_vars']] <- 'FALSE'
+      parameters[['drop_vars']] <- c(parameters$predictors)
     } else {
-      parameters[['list_drop_vars']] <- 'TRUE'
-    } # Drop Vars Grouped in List of Objects
+      parameters[['drop_vars']] <- drop_vars
+    } #Drop Vars - List vs. Identified
+
 
     if (seed == 1234){
       parameters[['seed']] <- 1234
@@ -461,7 +465,7 @@ print_parameters <- function(parameters){
   if (parameters$list_drop_vars == 'FALSE'){
     message("\033[32m Variables to Drop: \033[0m", "\033[38m", ifelse(all(parameters$predictors %in% parameters$drop_vars), "All Predictors", unlist(parameters$drop_vars)), " \033[0m")
   } else {
-    message("\033[32m Variables to Drop: ", paste(paste0('(', unlist(parameters$list_drop_vars), ')'), collapse = " ") ," \033[0m")
+    message("\033[32m Variables to Drop: \033[0m", paste(paste0('(', names(parameters$drop_vars), ')'), collapse = "; "))
   }
 
     message("\033[32m Train/Test Split: \033[0m", "\033[38m", (parameters$train_split)*100, "/", 100-((parameters$train_split)*100), "\033[0m \n",
@@ -493,65 +497,99 @@ placebo_shuffle <- function(declared_model, parameters){
     variables <- c(unlist(parameters$predictors), unlist(parameters$interactions))
   }  # Get Variables
 
-
   original_predictions <- predict(declared_model, data.frame(parameters$test_set, check.names = F), na.action = na.pass)
+
+  variables = parameters$drop_vars
+
 
   for (rep in 1:as.numeric(parameters$placebo_iterations)){
 
-    for (var in variables){
+    if (parameters$list_drop_vars == TRUE){
 
-      shuffle_data <- data.frame(parameters$test_set, check.names = F) #Get Test Data
-      interaction_vars <- c()
+      for (drop_group in 1:length(variables)){
+        shuffle_data <- data.frame(parameters$test_set, check.names = F) #Get Test Data
 
-      if (grepl('(\\*|\\:)', var)){
-        interaction_vars <- unlist(stringr::str_split(var, pattern = c('\\*', '\\:')))
-        vars_to_shuffle <- c(unique(interaction_vars, var))
-        vars_to_shuffle <- vars_to_shuffle[!grepl('(\\*|\\:)', vars_to_shuffle)]
-        interaction_temp <- list()
-        for (interaction in 1:length(interaction_terms)){
-          interaction_temp[[interaction]] <- str_split(interaction_terms[interaction], pattern = c('\\*', '\\:'))[1]
-        }
-        interaction_vars <- interaction_temp
-        # Condition 1: Interaction Term (Shuffle Interaction & All Associated Vars)
-      } else {
+        temp_drop_group <- unlist(variables[drop_group])
 
-        associated_vars <- variables[grepl(var, variables)] #Get All Vars where Var Appears (i.e., Check if Part of Interaction)
-        vars_to_shuffle <- associated_vars
+        for (var_name in 1:length(temp_drop_group)){
+          shuffle_data[[var_name]] <- sample(shuffle_data[[var_name]])
+        } #Shuffle Each of the Vars
 
-        if (length(associated_vars) == 1){
-          vars_to_shuffle <- var #Condition 2: If Var Is Not Part of Interaction, Only Shuffle Var
+        interaction_terms_in_original <- names(shuffle_data[grepl('(\\*|\\:)', names(shuffle_data))]) # Check if Interaction Terms in Original Data
+        if (!length(interaction_terms_in_original) == 0){
+          for (interaction in 1:length(interaction_terms_in_original)){
+            temp_interaction <- c(stringr::str_split(interaction_terms_in_original[interaction], pattern = c('\\*', '\\:')))[[1]]
+            shuffle_data[interaction_terms_in_original[interaction]] <- apply(shuffle_data[, temp_interaction], 1, prod)
+          } # For Each Interaction Term - Reconfigure
 
+        } #If Not Null Interactions
+
+        shuffled_predictions <- predict(declared_model, newdata = shuffle_data, na.action = na.pass) # Predict using the shuffled data
+        accuracy_change <- mean(original_predictions != shuffled_predictions) # Calculate accuracy change
+        placebo_temp <- data.frame(rep_count = rep, variable = names(variables[drop_group]), accuracy_change = accuracy_change) # Store the accuracy change
+        placebos <- dplyr::bind_rows(placebos, placebo_temp)
+
+
+      } #If List Drop Vars = TRUE
+
+    } else {
+
+      for (var in variables){
+
+        shuffle_data <- data.frame(parameters$test_set, check.names = F) #Get Test Data
+        interaction_vars <- c()
+
+        if (grepl('(\\*|\\:)', var)){
+          interaction_vars <- unlist(stringr::str_split(var, pattern = c('\\*', '\\:')))
+          vars_to_shuffle <- c(unique(interaction_vars, var))
+          vars_to_shuffle <- vars_to_shuffle[!grepl('(\\*|\\:)', vars_to_shuffle)]
+          interaction_temp <- list()
+          for (interaction in 1:length(interaction_terms)){
+            interaction_temp[[interaction]] <- str_split(interaction_terms[interaction], pattern = c('\\*', '\\:'))[1]
+          }
+          interaction_vars <- interaction_temp
+          # Condition 1: Interaction Term (Shuffle Interaction & All Associated Vars)
         } else {
 
-          vars_to_shuffle <- var
-          interaction_terms <- associated_vars[!associated_vars == var]
-          interaction_vars <- list()
-          for (interaction in 1:length(interaction_terms)){
-            interaction_vars[[interaction]] <- str_split(interaction_terms[interaction], pattern = c('\\*', '\\:'))[1]
+          associated_vars <- variables[grepl(var, variables)] #Get All Vars where Var Appears (i.e., Check if Part of Interaction)
+          vars_to_shuffle <- associated_vars
+
+          if (length(associated_vars) == 1){
+            vars_to_shuffle <- var #Condition 2: If Var Is Not Part of Interaction, Only Shuffle Var
+
+          } else {
+
+            vars_to_shuffle <- var
+            interaction_terms <- associated_vars[!associated_vars == var]
+            interaction_vars <- list()
+            for (interaction in 1:length(interaction_terms)){
+              interaction_vars[[interaction]] <- str_split(interaction_terms[interaction], pattern = c('\\*', '\\:'))[1]
+            }
+
+          } # Condition 3: If Var Found In Interaction, Shuffle Var and Recompile Interaction
+
+        } #Conditions to Determine Which Vars to Shuffle
+
+        for (var_name in vars_to_shuffle) {
+          shuffle_data[[var_name]] <- sample(shuffle_data[[var_name]])
+        } #Shuffle Any & All Vars Included in Shuffle
+
+        if (!is.null(interaction_vars)){
+          for (interaction in 1:length(interaction_vars)){
+            t <- interaction_vars[[interaction]][[1]]
+            shuffle_data[interaction_terms[interaction]] <- apply(shuffle_data[, t], 1, prod)
           }
-
-        } # Condition 3: If Var Found In Interaction, Shuffle Var and Recompile Interaction
-
-      } #Conditions to Determine Which Vars to Shuffle
-
-      for (var_name in vars_to_shuffle) {
-        shuffle_data[[var_name]] <- sample(shuffle_data[[var_name]])
-      } #Shuffle Any & All Vars Included in Shuffle
-
-      if (!is.null(interaction_vars)){
-        for (interaction in 1:length(interaction_vars)){
-          t <- interaction_vars[[interaction]][[1]]
-          shuffle_data[interaction_terms[interaction]] <- apply(shuffle_data[, t], 1, prod)
-        }
-      } #Shuffle if Interaction Included in Vars
+        } #Shuffle if Interaction Included in Vars
 
 
-      shuffled_predictions <- predict(declared_model, newdata = shuffle_data, na.action = na.pass) # Predict using the shuffled data
-      accuracy_change <- mean(original_predictions != shuffled_predictions) # Calculate accuracy change
-      placebo_temp <- data.frame(rep_count = rep, variable = var, accuracy_change = accuracy_change) # Store the accuracy change
-      placebos <- dplyr::bind_rows(placebos, placebo_temp)
+        shuffled_predictions <- predict(declared_model, newdata = shuffle_data, na.action = na.pass) # Predict using the shuffled data
+        accuracy_change <- mean(original_predictions != shuffled_predictions) # Calculate accuracy change
+        placebo_temp <- data.frame(rep_count = rep, variable = var, accuracy_change = accuracy_change) # Store the accuracy change
+        placebos <- dplyr::bind_rows(placebos, placebo_temp)
 
-    } #For Var in Variables
+      } #For Var in Variables
+
+    }  #If List Drop Vars = F
 
     if (rep %% 5 == 0) {
       message("\033[37m           Completed Placebo Shuffling Iteration \033[0m", rep) #Print Update
@@ -584,84 +622,163 @@ dropping_vars <- function(parameters, output){
 
   if (parameters$list_drop_vars == 'FALSE'){
     vars_to_drop <- unlist(parameters$drop_vars)
-  } #Indicate Source of Drop Vars (List Objects or Declared/Assigned Vars)
+    {
+      combinations <- data.frame() # Create Empty DF for Combinations of Drop Vars
 
-  {
-    combinations <- data.frame() # Create Empty DF for Combinations of Drop Vars
+      for (drop_var in 1:length(vars_to_drop)){
+        temp_drop_var <- vars_to_drop[drop_var]
+        other_vars <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)]
+        other_vars <- other_vars[!grepl('(\\*|\\:)', other_vars)]
+        other_vars <- ifelse(other_vars %in% unlist(parameters$factors), paste0('factor(', other_vars, ')'), other_vars)
+        other_interactions <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)]
+        other_interactions <- other_interactions[grepl('(\\*|\\:)', other_interactions)]
+        other_cleaned_interactions <- c()
+        if(!is.null(other_interactions)){
+          for (interaction in other_interactions){
+            temp_interaction <- c()
+            terms <- unlist(stringr::str_split(interaction, pattern = '(\\*|\\:)'))
+            interaction_pattern <- ifelse(grepl('\\*', interaction), '*', ':')
+            for (term in terms){
+              term <- ifelse(term %in% unlist(parameters$factors), paste0('factor(', term, ')'), term)
+              temp_interaction <- c(temp_interaction, term)
+            } # For Each Term in Interaction
+            temp_interaction <- paste(temp_interaction, collapse = interaction_pattern)
+            other_cleaned_interactions <- c(other_cleaned_interactions, temp_interaction)
+          } #For Each Interaction - Separate + Add if factor() if Factor & Recombine
+        } #If 'other_interactions' isn't empty
+        other_vars <- c(other_vars, other_cleaned_interactions) #Combine All Vars Back Into Single Object
 
-    for (drop_var in 1:length(vars_to_drop)){
-      temp_drop_var <- vars_to_drop[drop_var]
-      other_vars <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)]
-      other_vars <- other_vars[!grepl('(\\*|\\:)', other_vars)]
-      other_vars <- ifelse(other_vars %in% unlist(parameters$factors), paste0('factor(', other_vars, ')'), other_vars)
-      other_interactions <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)]
-      other_interactions <- other_interactions[grepl('(\\*|\\:)', other_interactions)]
-      other_cleaned_interactions <- c()
-      if(!is.null(other_interactions)){
-        for (interaction in other_interactions){
-          temp_interaction <- c()
-          terms <- unlist(stringr::str_split(interaction, pattern = '(\\*|\\:)'))
-          interaction_pattern <- ifelse(grepl('\\*', interaction), '*', ':')
-          for (term in terms){
-            term <- ifelse(term %in% unlist(parameters$factors), paste0('factor(', term, ')'), term)
-            temp_interaction <- c(temp_interaction, term)
-          } # For Each Term in Interaction
-          temp_interaction <- paste(temp_interaction, collapse = interaction_pattern)
-          other_cleaned_interactions <- c(other_cleaned_interactions, temp_interaction)
-        } #For Each Interaction - Separate + Add if factor() if Factor & Recombine
-      } #If 'other_interactions' isn't empty
-      other_vars <- c(other_vars, other_cleaned_interactions) #Combine All Vars Back Into Single Object
+        outcome_variable <- ifelse(parameters$outcome_type == 'Binomial', paste0('factor(', parameters$outcome, ')'), parameters$outcome) # Add factor() to outcome_var if Binomially Distributed
 
-      outcome_variable <- ifelse(parameters$outcome_type == 'Binomial', paste0('factor(', parameters$outcome, ')'), parameters$outcome) # Add factor() to outcome_var if Binomially Distributed
+        temp_combination <- paste0(outcome_variable, '~', paste(other_vars, collapse = '+'))
 
-      temp_combination <- paste0(outcome_variable, '~', paste(other_vars, collapse = '+'))
+        temp_combination <- data.frame(
+          temp_combination = temp_combination,
+          dropped_var = temp_drop_var) #Collapse Into Single Temp DF
 
-      temp_combination <- data.frame(
-        temp_combination = temp_combination,
-        dropped_var = temp_drop_var) #Collapse Into Single Temp DF
+        combinations <- dplyr::bind_rows(combinations, temp_combination) #Add to Combinations Frame
 
-      combinations <- dplyr::bind_rows(combinations, temp_combination) #Add to Combinations Frame
-
-    }
+      }
 
 
-  } # Create Combinations
+    } # Create Combinations (If Non-List Drop Vars)
+    {
 
-  {
+      for (combination in 1:nrow(combinations)){
+        temp_combination_row <- combinations[combination,] #Get Temp Row
+        temp_dropped_var <- temp_combination_row$dropped_var
 
-    for (combination in 1:nrow(combinations)){
-      temp_combination_row <- combinations[combination,] #Get Temp Row
-      temp_dropped_var <- temp_combination_row$dropped_var
+        suppressWarnings(suppress_message({
+          temp_drop_var_declared_model <- train(
+            form = as.formula(temp_combination$temp_combination),
+            data = data.frame(parameters$train_set),
+            metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
+            method = as.character(parameters$model),
+            trControl = parameters$train_control,
+            localImp = TRUE
+          )
+        }))  #Re-Run Model w/ Omitted Variable
 
-      suppressWarnings(suppress_message({
-        temp_drop_var_declared_model <- train(
-          form = as.formula(temp_combination$temp_combination),
-          data = data.frame(parameters$train_set),
-          metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
-          method = as.character(parameters$model),
-          trControl = parameters$train_control,
-          localImp = TRUE
-        )
-      }))  #Re-Run Model w/ Omitted Variable
+        if (parameters$outcome_type == 'Continuous'){
+          fit_drop_var <- mean(temp_drop_var_declared_model$results$RMSE)
+          fit_original <- mean(output$declared_model$results$RMSE)
+        } else {
+          fit_drop_var <- mean(temp_drop_var_declared_model$results$Accuracy)
+          fit_original <- mean(output$declared_model$results$Accuracy)
+        } # Get Fit -- Exception by Data Type
 
-      if (parameters$outcome_type == 'Continuous'){
-        fit_drop_var <- mean(temp_drop_var_declared_model$results$RMSE)
-        fit_original <- mean(output$declared_model$results$RMSE)
-      } else {
-        fit_drop_var <- mean(temp_drop_var_declared_model$results$Accuracy)
-        fit_original <- mean(output$declared_model$results$Accuracy)
-      } # Get Fit -- Exception by Data Type
+        change_temp <- data.frame(var = temp_dropped_var,
+                                  fit_change = (fit_original - fit_drop_var)) #Get Temp Frame for Fit Change
 
-      change_temp <- data.frame(var = temp_dropped_var,
-                                fit_change = (fit_original - fit_drop_var)) #Get Temp Frame for Fit Change
+        fit_change <- dplyr::bind_rows(fit_change, change_temp) #Append to fit_change
 
-      fit_change <- dplyr::bind_rows(fit_change, change_temp) #Append to fit_change
+        message("\033[37m           Completed Variable Omission For \033[0m", temp_combination_row$dropped_var) #Print Update
 
-      message("\033[37m           Completed Variable Omission For \033[0m", temp_combination_row$dropped_var) #Print Update
+      }
 
-    }
+    } # Assess Fit Change from Omitting Vars (If Non-List Drop Vars)
+    } else {
+      {
 
-  } # Assess Fit Change from Omitting Vars
+        combinations <- data.frame()
+        if (is.null(parameters$interactions)){
+          vars_to_drop <- c(parameters$predictors)
+        } else {
+          vars_to_drop <- c(parameters$predictors, parameters$interactions)
+        }
+
+        for (drop_var in 1:length(parameters$drop_vars)){
+          temp_drop_var <- parameters$drop_vars[[drop_var]]
+          other_vars <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)]
+          other_vars <- other_vars[!grepl('(\\*|\\:)', other_vars)]
+          other_vars <- ifelse(other_vars %in% unlist(parameters$factors), paste0('factor(', other_vars, ')'), other_vars)
+          other_interactions <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)]
+          other_interactions <- other_interactions[grepl('(\\*|\\:)', other_interactions)]
+          other_cleaned_interactions <- c()
+          if(!is.null(other_interactions)){
+            for (interaction in other_interactions){
+              temp_interaction <- c()
+              terms <- unlist(stringr::str_split(interaction, pattern = '(\\*|\\:)'))
+              interaction_pattern <- ifelse(grepl('\\*', interaction), '*', ':')
+              for (term in terms){
+                term <- ifelse(term %in% unlist(parameters$factors), paste0('factor(', term, ')'), term)
+                temp_interaction <- c(temp_interaction, term)
+              } # For Each Term in Interaction
+              temp_interaction <- paste(temp_interaction, collapse = interaction_pattern)
+              other_cleaned_interactions <- c(other_cleaned_interactions, temp_interaction)
+            } #For Each Interaction - Separate + Add if factor() if Factor & Recombine
+          } #If 'other_interactions' isn't empty
+          other_vars <- c(other_vars, other_cleaned_interactions) #Combine All Vars Back Into Single Object
+
+          outcome_variable <- ifelse(parameters$outcome_type == 'Binomial', paste0('factor(', parameters$outcome, ')'), parameters$outcome) # Add factor() to outcome_var if Binomially Distributed
+
+          temp_combination <- paste0(outcome_variable, '~', paste(other_vars, collapse = '+'))
+
+          temp_combination <- data.frame(
+            temp_combination = temp_combination,
+            dropped_var = names(parameters$drop_vars[drop_var])) #Collapse Into Single Temp DF
+
+          combinations <- dplyr::bind_rows(combinations, temp_combination) #Add to Combinations Frame
+
+        }
+
+      } #Create Combinations (If List Drop Vars)
+      {
+        for (combination in 1:nrow(combinations)){
+          temp_combination_row <- combinations[combination,] #Get Temp Row
+          temp_dropped_var <- temp_combination_row$dropped_var
+
+          suppressWarnings(suppress_message({
+            temp_drop_var_declared_model <- train(
+              form = as.formula(temp_combination$temp_combination),
+              data = data.frame(parameters$train_set),
+              metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
+              method = as.character(parameters$model),
+              trControl = parameters$train_control,
+              localImp = TRUE
+            )
+          }))  #Re-Run Model w/ Omitted Variable
+
+          if (parameters$outcome_type == 'Continuous'){
+            fit_drop_var <- mean(temp_drop_var_declared_model$results$RMSE)
+            fit_original <- mean(output$declared_model$results$RMSE)
+          } else {
+            fit_drop_var <- mean(temp_drop_var_declared_model$results$Accuracy)
+            fit_original <- mean(output$declared_model$results$Accuracy)
+          } # Get Fit -- Exception by Data Type
+
+          change_temp <- data.frame(var = temp_dropped_var,
+                                    fit_change = (fit_original - fit_drop_var)) #Get Temp Frame for Fit Change
+
+          fit_change <- dplyr::bind_rows(fit_change, change_temp) #Append to fit_change
+
+          message("\033[37m           Completed Variable Omission For \033[0m", temp_combination_row$dropped_var) #Print Update
+
+        }
+      } #Assess Fit Change from Omitting Vars (If List Drop Vars)
+
+    } #Indicate Source of Drop Vars (List Objects or Declared/Assigned Vars)
+
 
   return(fit_change)
 
@@ -844,7 +961,7 @@ pai_diagnostic <- function(output){
 
   {
 
-    linear_vars <- output$fit_change$var
+    linear_vars <- output$parameters$predictors
     parameters <- output$parameters
     push_output <- output$push #Grab Push Output
     original_test_data <- data.frame(parameters$test_set, check.names = F)
@@ -1222,18 +1339,31 @@ sandbox_data <- data.frame(
   var6 = sample(0:50, 100, replace = TRUE)) #Sample Data (Sparse Data Probelm Introduced in Var3)
 
 pai_test <- pai(data = sandbox_data,
+                model = 'parRF',
+                outcome = 'var1',
+                cores = 1) #Basic Test
+
+pai_test <- pai(data = sandbox_data,
             model = 'parRF',
             outcome = 'var1',
             predictors = NULL,
             interactions = c('var4*var5'),
-            cores = 5) #Test PAI Run
+            cores = 5) #Test w/ Interaction
+
+pai_test <- pai(data = sandbox_data,
+                model = 'parRF',
+                outcome = 'var1',
+                predictors = NULL,
+                drop_vars = list(group1 = c('var2', 'var4', 'var5')),
+                list_drop_vars = TRUE,
+                interactions = c('var4*var5'),
+                cores = 5) #Test w/ Interaction & List Vars
 
 
 pai_diagnostic_retrieval(output = pai_test,
-                         diagnostic = 'push',
+                         diagnostic = 'placebo',
                          type = 'figure',
-                         combine_plots = T,
-                         variables = 'var5')
+                         combine_plots = TRUE)
 
 
 

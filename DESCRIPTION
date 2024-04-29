@@ -1,12 +1,21 @@
-Package: PAI
+Package: Predictions as Inference (PAI)
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Predictions-as-Inference
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+Author: Jake S. Truscott
+Maintainer: jtruscot@purdue.edu
+Description: Package allows for flexiable application of ensemble machine learning models using caret (https://cran.r-project.org/web/packages/caret/index.html) 
+    and subsequent diagnostic regiment to assess data generating processes with the potential for complex, non-linear functional forms and deep interactions. 
+License: MIT
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.2.3
+Imports:
+  caret,
+  dplyr,
+  stringr,
+  doParallel,
+  broom,
+  cowplot,
+  grid,
+  gridExtra
