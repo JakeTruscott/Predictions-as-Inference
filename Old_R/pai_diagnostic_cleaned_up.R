@@ -105,4 +105,4 @@ pai_diagnostic <- function(output){
 
 } #Linear Fit by Bins
 
-t <- pai_diagnostic(output)
+
