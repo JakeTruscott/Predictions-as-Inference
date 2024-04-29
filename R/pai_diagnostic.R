@@ -1,28 +1,28 @@
-#' Title
+#' PAI Diagnostic Retrieval Function
 #'
 #' @param output Output object from `pai()`
-#' @param diagnostic Diagnostic element to return. Options: `placebo`, `push`, or `bootstrap`
-#' @param type Diagnostic subset to return. Options `data`, `figure`, or `distribution` (`bootstrap` **ONLY**)
-#' @param variables Subset of variables to return (`figure` **ONLY**)
+#' @param diagnostic Diagnostic element to return. Options: `placebo`, `push`, `bootstrap`, or `summary`
+#' @param type Diagnostic subset to return. Options `data`, `figure`, or `distribution` (`bootstrap` ONLY)
+#' @param variables Subset of variables to return (`figure` ONLY)
 #' @param combine_plots Return `figure`(s) as combined plot using `cowplot` (CRAN). Defaults to `FALSE`
 #'
 #' @return
 #' @export
 #'
 #' @examples
-#' `placebo` Example
+#' Placebo Example
 #' placebo <- pai_diagnostic_retrieval(output = output, diagnostic = 'placebo')
-#' `push` Example with combined plots and subset of `var2` and `var4`
+#' Push Example with combined plots and subset of var2 and var4
 #' push <- pai_diagnostic_retrieval(output = output, diagnostic = 'push', type = 'figure', variables = c('var2', 'var4'), combine_plots = TRUE)
-#' `boostrap` Example with variable-level plots
+#' Bootstrap Example with variable-level plots
 #' boostrap <- pai_diagnostic_retrieval(output = output, diagnostic = 'boostrap', type = 'figure', combine_plots = TRUE)
-#' `boostrap distribution` Example
+#' Boostrap Distribution Example
 #' boostrap_distribution <- pai_diagnostic_retrieval(output = output, diagnostic = 'boostrap', type = 'distribution')
-pai_diagnostic_retrieval <- function(output, #PAI Output Object
-                                     diagnostic, # placebo, push, or bootstrap
-                                     type, # data, figure, or distribution (bootstrap *ONLY*)
-                                     variables = NULL, # Variables to Declare
-                                     combine_plots = FALSE #Combine Figures (if multiple Variables Declared)
+pai_diagnostic_retrieval <- function(output,
+                                     diagnostic,
+                                     type,
+                                     variables = NULL,
+                                     combine_plots = FALSE
 ){
 
   diagnostic_output <- output$diagnostics[[diagnostic]] #diagnostic = 'placebo', 'push', 'bootstrap'
@@ -179,8 +179,37 @@ pai_diagnostic_retrieval <- function(output, #PAI Output Object
 
   } #If Diagnostic = 'bootstrap'
 
+  if (diagnostic == 'summary'){
+
+    summary_diagnostics <- list()
+
+    summary_diagnostics[['Out of Sample Accuracy']] <- data.frame(output$declared_model$results)
+    summary_diagnostics[['Variable Importance']] <- data.frame(varImp(output$declared_model)[1])
+
+    predictions <- predict(output$declared_model, newdata = output$parameters$test_set)
+
+    if (output$parameters$outcome_type == 'Binomial'){
+      true_labels <- data.frame(output$parameters$test_set)[[output$parameters$outcome]]
+      true_labels <- as.factor(true_labels)
+      predictions <- factor(predictions, levels = levels(true_labels))
+      conf_matrix <- confusionMatrix(predictions, true_labels)
+      summary_diagnostics[['Confusion Matrix']] <- conf_matrix
+      summary_diagnostics['Precision'] <- conf_matrix$byClass["Precision"]
+      summary_diagnostics['Recall'] <-  conf_matrix$byClass["Recall"]
+      summary_diagnostics['F1'] <-  conf_matrix$byClass["F1"]
+
+    } else {
+      conf_matrix <- confusionMatrix(output$declared_model)
+      summary_diagnostics['confusion_matrix'] <- conf_matrix
+    }
+
+
+    diagnostic_retrieved <- summary_diagnostics
+
+  }
+
   return(diagnostic_retrieved)
 
 
-} #Function to Retrieve Diagnostic Data/Figures
+}
 

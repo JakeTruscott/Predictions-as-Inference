@@ -19,9 +19,9 @@
 #' @export
 #'
 #' @examples
-#' Example Using `adaboost` with `sandbox_data` and 5 Cores
+#' Example Using adaboost with sandbox_data and 5 Cores
 #' adaboost_test <- pai(data = sandbox_data, model = 'adaboost', outcome = 'var1', predictors = NULL, interactions = c('var2:var3', 'var4:var5'), cores = 5)
-#' Example Using `parRF` with `sandbox_data` and list_drop_vars
+#' Example Using parRF with sandbox_data and list_drop_vars
 #' parRF_test <- pai(data = sandbox_data, model = 'parRF', outcome = 'var1', predictors = NULL, list_drop_vars = c(group_1 = c('var2', 'var3', var'4)))
 pai <- function(data, #Data
                 model = NULL, #Caret Model
