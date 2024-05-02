@@ -199,8 +199,14 @@ pai_diagnostic_retrieval <- function(output,
       summary_diagnostics['F1'] <-  conf_matrix$byClass["F1"]
 
     } else {
-      conf_matrix <- confusionMatrix(output$declared_model)
-      summary_diagnostics['confusion_matrix'] <- conf_matrix
+
+      mse <- mean((data.frame(output$parameters$test_set)[[output$parameters$outcome]] - predictions)^2)
+      rmse <- sqrt(mse)
+      mae <- mean(abs(data.frame(output$parameters$test_set)[[output$parameters$outcome]] - predictions))
+
+      summary_diagnostics[['Mean Squared Error (MSE)']] <- mse
+      summary_diagnostics[['Root Mean Squared Error (RMSE)']] <- rmse
+      summary_diagnostics[['Mean Absolute Error (MAE)']] <- mae
     }
 
 
@@ -213,3 +219,9 @@ pai_diagnostic_retrieval <- function(output,
 
 }
 
+
+pai_diagnostic_retrieval(output = temp_pai,
+               diagnostic = 'push',
+               type = 'figure',
+               variables = c('traditional_electricity_share', 'renewablecapacity_3yr_average'),
+               combine_plots = T)

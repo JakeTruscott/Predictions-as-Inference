@@ -1,28 +1,17 @@
-#' PAI Core Function
-#'
-#' @param data A structured dataset featuring a target variable of interest (y) and other predictors , providing a comprehensive framework for exploratory analysis and predictive modeling.
-#' @param model Machine learning model to employ in protocol; see `caret` (CRAN) for more information on available models.
-#' @param outcome Target variable of interest (y); Can be distributed binomialy or continuously.
-#' @param predictors Covariate(s); can declare directly or defaults to all if blank or NULL.
-#' @param interactions Interactive term(s); Define each interaction within a vector as "Var1*Var2" & separated by a comma.
-#' @param drop_vars Specific terms from `predictors` and (or) `interactions` to drop during information omission protocol.
-#' @param cores Number of computing cores to employ for parallel processing; Defaults to 1.
-#' @param placebo_iterations Number of placebo iterations to employ; Defaults to 10.
-#' @param folds Number of K-Folds to employ during `trainControl`; Defaults to 5
-#' @param train_split Proportion of data for Train/Test split; Defaults to 0.8 (Indicating an 80/20 Train/Test Split).
-#' @param custom_tc Custom `trainControl` parameters for unique model selection from `caret`; Defaults to common parameters for `parRF`, `adaboost`, and `rf` (i.e., tree-based methods).
-#' @param assign_factors Integer representing number of levels to auto-assign factor terms; Defaults to 3.
-#' @param list_drop_vars If TRUE, allows for the assignment of several variables to drop concurrently as indicated by objects stored in global environment.
-#' @param seed Random Seed; Defaults to 1234
-#'
-#' @return
-#' @export
-#'
-#' @examples
-#' Example Using adaboost with sandbox_data and 5 Cores
-#' adaboost_test <- pai(data = sandbox_data, model = 'adaboost', outcome = 'var1', predictors = NULL, interactions = c('var2:var3', 'var4:var5'), cores = 5)
-#' Example Using parRF with sandbox_data and list_drop_vars
-#' parRF_test <- pai(data = sandbox_data, model = 'parRF', outcome = 'var1', predictors = NULL, list_drop_vars = c(group_1 = c('var2', 'var3', var'4)))
+---
+title: "Predictions as Inference (PAI) Walkthrough"
+subtitle: "Hainmueller Replication"
+author: "Jake S. Truscott, Ph.D"
+date: "April 30, 2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r core function and dependencies, include=FALSE}
+
 pai <- function(data, #Data
                 model = NULL, #Caret Model
                 outcome = NULL, #DV
@@ -462,14 +451,7 @@ pai <- function(data, #Data
             } #If Not Null Interactions
 
             shuffled_predictions <- predict(declared_model, newdata = shuffle_data, na.action = na.pass) # Predict using the shuffled data
-
-
-            if (parameters[['outcome_type']] == 'Binomial'){
-              accuracy_change <- mean(shuffled_predictions != original_predictions) #Get Pred Accuracy Change if Binomial DV
-            } else {
-              accuracy_change <- sqrt(mean((shuffled_predictions - original_predictions)^2)) #Get Root Mean Squared Error Change in Continuous DV
-            }
-
+            accuracy_change <- mean(original_predictions != shuffled_predictions) # Calculate accuracy change
             placebo_temp <- data.frame(rep_count = rep, variable = names(variables[drop_group]), accuracy_change = accuracy_change) # Store the accuracy change
             placebos <- dplyr::bind_rows(placebos, placebo_temp)
 
@@ -535,6 +517,7 @@ pai <- function(data, #Data
       return(placebo)
 
     } # Placebo Protocol
+    # Problem with Placebo Shuffle -- Needs to Shuffle Interactions x Base Terms if One or Other is Declared...
 
     dropping_vars <- function(parameters, output){
 
@@ -1099,6 +1082,7 @@ pai <- function(data, #Data
     } # Diagnostic Plots & Stats
 
   } #Dependency Functions
+
   set.seed(seed) #Set Random Seed (Defaults to 1234)
 
   output <- list()
@@ -1160,3 +1144,398 @@ pai <- function(data, #Data
 
 } #Predictions as Inference Main Function
 
+
+pai_diagnostic_retrieval <- function(output,
+                                     diagnostic,
+                                     type,
+                                     variables = NULL,
+                                     combine_plots = FALSE
+){
+
+  diagnostic_output <- output$diagnostics[[diagnostic]] #diagnostic = 'placebo', 'push', 'bootstrap'
+
+  if (diagnostic == 'placebo'){
+
+    if (type == 'figure'){
+
+      if (is.null(variables)){
+        diagnostic_retrieved <- diagnostic_output #Returns Full Placebo Figure
+      } else {
+        diagnostic_retrieved <- diagnostic_output %+% subset(diagnostic_output$data, var %in% variables) #Returns Placebo Figure Filtered by Var(s)
+      } # If Variable(s) Declared
+
+
+    } else {
+
+      diagnostic_retrieved <- diagnostic_output$data #Returns Placebo Fit Data
+
+    } #If Type is Figure vs. Data
+
+  } #If Diagnostic = 'Placebo'
+
+  if (diagnostic == 'push'){
+
+    diagnostic_retrieved = list() #Initialize Empty List
+
+    if (!is.null(variables)){
+
+      for (var in 1:length(variables)){
+
+        temp_var = variables[var]
+
+        retrieval_type = ifelse(type == 'data', 'linear_fit', 'linear_plot')
+
+        temp_var = variables[var]
+        temp_retrieval <- diagnostic_output[[temp_var]][[retrieval_type]]
+        diagnostic_retrieved[[as.character(temp_var)]] <- temp_retrieval
+
+      }
+
+    } else {
+
+      variables <- names(diagnostic_output)
+      vars <- names(diagnostic_output) #Get Var Names from Diagnostic[['push']]
+
+      for (var in 1:length(vars)){
+
+        temp_var = vars[var]
+
+        retrieval_type = ifelse(type == 'linear_fit', 'linear_fit', 'linear_plot')
+
+        temp_retrieval <- diagnostic_output[[temp_var]][[retrieval_type]]
+        diagnostic_retrieved[[as.character(temp_var)]] <- temp_retrieval
+
+      } # Grab Figure or Fit for Each Var
+    }  #If No Variables Declared - Return All
+
+    if (combine_plots == TRUE){
+
+      titles_vector = names(diagnostic_retrieved)
+
+      diagnostic_figure_retrieved <- diagnostic_retrieved
+
+      for (i in 1:length(diagnostic_retrieved)){
+        diagnostic_figure_retrieved[[i]]$labels$x = ''
+        diagnostic_figure_retrieved[[i]]$labels$y = ''
+
+      } #Remove Legends
+
+      for (i in seq_along(diagnostic_figure_retrieved)) {
+        diagnostic_figure_retrieved[[i]] <- arrangeGrob(
+          diagnostic_figure_retrieved[[i]],
+          top = textGrob(titles_vector[i], gp = gpar(fontsize = 14))
+        )
+      } # Add Var-Level Titles
+
+
+      diagnostic_retrieved <- cowplot::plot_grid(plotlist = diagnostic_figure_retrieved,
+                                                 ncol = round(length(variables)/2, 0),
+                                                 scale = 0.9) # Arrange plots on a grid
+
+
+      diagnostic_retrieved <- diagnostic_retrieved +
+        draw_label("Step", x=0.5, y=  0, vjust=-1, angle= 0) +
+        draw_label("Predicted Accuracy", x=  0, y=0.5, vjust= 1, angle=90)
+
+    } #If combine_plots = TRUE, Combine Them to Single Plot and Return Plot (Else, Return List of Figures)
+
+
+  } #If Diagnostic is 'Push'
+
+  if (diagnostic == 'bootstrap'){
+
+    if (type == 'data'){
+      diagnostic_retrieved <- diagnostic_output$bootstrap_output
+    } #If Type is Bootstrap Data Output
+
+    if (type == 'distribution'){
+      diagnostic_retrieved <- diagnostic_output$bootstrap_distribution
+    } # If Type is Distribution Figure
+
+    if (type == 'figure'){
+
+      if (is.null(variables)){
+        bootstrap_vars = names(diagnostic_output$bootstrap_output[!names(diagnostic_output$bootstrap_output) %in% c('accuracy', 'bootstrap_id')])
+      } else {
+        bootstrap_vars = variables
+      } # If Variables = NULL, Get Vars from Boostrap Output Data
+
+      diagnostic_retrieved <- list() # Initialize Empty List for Figures
+
+      for (var in 1:length(bootstrap_vars)){
+        diagnostic_retrieved[[bootstrap_vars[var]]] <- diagnostic_output$variable_figures[[bootstrap_vars[var]]]
+
+      } #Collect Figures by Var
+
+      if (combine_plots == TRUE){
+
+        g_legend <- function(a.gplot) {
+          tmp <- ggplot_gtable(ggplot_build(a.gplot))
+          leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+          legend <- tmp$grobs[[leg]]
+          return(legend)
+        } #Get Legend Function
+
+        legend <- g_legend(diagnostic_retrieved[[1]]) #Get Legend from First Plot
+
+        for (i in 1:length(diagnostic_retrieved)){
+          temp_figure <-  diagnostic_retrieved[[i]] +  guides(shape = 'none', fill = 'none', colour = 'none')
+          diagnostic_retrieved[[i]] <- temp_figure
+        } #Remove Legends
+
+        {
+
+          x_label = diagnostic_retrieved[[1]]$labels$x
+          y_label = diagnostic_retrieved[[1]]$labels$y
+
+        } #Grab Labels
+
+        temp_figure <- cowplot::plot_grid(plotlist = diagnostic_retrieved,
+                                          label_x = x_label,
+                                          label_y = y_label)
+
+        legend_below <- cowplot::plot_grid(NULL, legend, nrow = 2, align = 'v')
+
+        diagnostic_retrieved <- cowplot::plot_grid(temp_figure, legend_below, ncol = 1, rel_heights = c(4, 1))
+
+
+
+      } #If combine_plots = TRUE, Combine Them to Single Plot and Return Plot (Else, Return List of Figures)
+
+    } #If Type is Var Figure
+
+  } #If Diagnostic = 'bootstrap'
+
+  if (diagnostic == 'summary'){
+
+    summary_diagnostics <- list()
+
+    summary_diagnostics[['Out of Sample Accuracy']] <- data.frame(output$declared_model$results)
+    summary_diagnostics[['Variable Importance']] <- data.frame(varImp(output$declared_model)[1])
+
+    predictions <- predict(output$declared_model, newdata = output$parameters$test_set)
+
+    if (output$parameters$outcome_type == 'Binomial'){
+      true_labels <- data.frame(output$parameters$test_set)[[output$parameters$outcome]]
+      true_labels <- as.factor(true_labels)
+      predictions <- factor(predictions, levels = levels(true_labels))
+      conf_matrix <- confusionMatrix(predictions, true_labels)
+      summary_diagnostics[['Confusion Matrix']] <- conf_matrix
+      summary_diagnostics['Precision'] <- conf_matrix$byClass["Precision"]
+      summary_diagnostics['Recall'] <-  conf_matrix$byClass["Recall"]
+      summary_diagnostics['F1'] <-  conf_matrix$byClass["F1"]
+
+    } else {
+
+      mse <- mean((data.frame(output$parameters$test_set)[[output$parameters$outcome]] - predictions)^2)
+      rmse <- sqrt(mse)
+      mae <- mean(abs(data.frame(output$parameters$test_set)[[output$parameters$outcome]] - predictions))
+
+      summary_diagnostics[['Mean Squared Error (MSE)']] <- mse
+      summary_diagnostics[['Root Mean Squared Error (RMSE)']] <- rmse
+      summary_diagnostics[['Mean Absolute Error (MAE)']] <- mae
+    }
+
+
+    diagnostic_retrieved <- summary_diagnostics
+
+  }
+
+  return(diagnostic_retrieved)
+
+
+}
+
+
+```
+
+```{r dependency libraries, include = FALSE}
+
+require(caret)
+require(dplyr)
+require(stringr)
+require(doParallel)
+require(broom)
+require(cowplot)
+require(gridExtra)
+require(grid)
+require(foreign)
+
+```
+
+
+## **Predictions as Inference**
+
+```{r PAI Function Main, eval = F}
+pai <- function(data, 
+                model = NULL, 
+                outcome = NULL,
+                predictors = NULL, 
+                interactions = NULL, 
+                drop_vars = NULL, 
+                cores = NULL, 
+                placebo_iterations = NULL, 
+                folds = NULL, 
+                train_split = 0.8, 
+                custom_tc = FALSE, 
+                assign_factors = 3,
+                list_drop_vars = FALSE,
+                seed = 1234){...}
+```
+
+### **Variables**
+
+-   `data` Data object <br>
+-   `model` Model selected from `caret` CRAN (Ex: 'parRF', 'adaboost') <br>
+-   `outcome` Dependent variable of interest <br>
+-   `predictors` Predictors of interest (defaults to all variables in `data` except `outcome`.) <br>
+-   `interactions` Interaction term(s) declared as a vector separated by ',' (Ex: c('var1\*var2', 'var3:var4')) <br>
+-   `drop_vars` Specific variables to drop during omission procedure (defaults to all predictors and interactions) <br>
+-   `cores` Number of computing cores to allocate (defaults to one) <br>
+-   `placebo_iterations` Number of placebo (shuffling) interations to run (defaults to 10) <br>
+-   `folds` Number of K-Folds for `trainControl` in `caret` CRAN (defaults to 5) <br>
+-   `train_split` Proportion of data for train/test split (Defaults to 0.8 -- Indicating 80/20 Split) <br>
+-   `custom_tc` Custom `trainControl` parameters (For `caret` models that require unique/specific parameters) <br>
+-   `assign_factors` Automatically assign levels to prescribe factor variables (Defaults to 3 Levels) <br>
+-   `list_drop_vars` If `TRUE` assigns drop_vars as a group designated by object in global environment (Ex: vars = c('var1', 'var2', 'var3') and drops them collectively instead of individually. <br>
+-   `seed` Random seed generator (Defaults to `1234`)
+
+
+### **Hainmueller Replication (Sample)**
+
+#### **Aklin and Urpelainen (AJPS 2013)**
+
+```{r Aklin Data Source, echo=FALSE}
+
+hainmueller_original <- read.csv("C:/Users/Jake Truscott/OneDrive - purdue.edu/Active Research/SJT_R_Package/PAI_Paper/hainmueller_replication.csv") #Load CSV w/ Hainmueller Info
+
+hainmueller_replications <- list() #Initialize Empty List
+
+for (i in 1:nrow(hainmueller_original)){
+
+  temp_row <- hainmueller_original[i,] # Grab Temporary Hainmueller Replication
+
+  temp_info <- list(
+    paper = temp_row$paper,
+    data_location = gsub('"', '', temp_row$data),
+    outcome = temp_row$y,
+    interaction = paste0(temp_row$d, ':', temp_row$x),
+    predictors = c(gsub('"', '', temp_row$z))
+  ) #Get Info from Temp Row
+
+  hainmueller_replications[[as.character(temp_info$paper)]] <- temp_info #Append to List
+
+} # Populate Replications List w/ Info
+
+temp_name <- names(hainmueller_replications[2]) # Retrieve Paper Name
+temp_data <- hainmueller_replications[[2]]$data_location # Retrieve Data Location
+temp_data <- foreign::read.dta(file = paste0("C:/Users/Jake Truscott/OneDrive - purdue.edu/Active Research/SJT_R_Package/PAI_Paper/hainmueller_replication/Data/", temp_data)) # Load Temporary Data
+temp_info <- hainmueller_replications[[2]] #Retrieve Replication Info
+
+temp_outcome <- temp_info$outcome # Retrieve Y Var
+temp_predictors <- temp_info$predictors # Retrieve X Predictors
+temp_predictors <- unlist(stringr::str_split(temp_predictors, ','))
+temp_predictors <- gsub(' ', '', temp_predictors)
+
+temp_interaction <- temp_info$interaction # Retrieve Interaction
+temp_interaction <- gsub(' ', '', temp_interaction)
+
+aklin_outcome <- temp_outcome
+aklin_predictors = temp_predictors
+aklin_interaction = temp_interaction
+aklin_2013 <- temp_data
+
+```
+
+```{r PAI Test Run, echo=TRUE, message=FALSE, warning=FALSE}
+pai_test <- pai(data = aklin_2013, # 520 Observations
+            model = 'parRF',
+            outcome = aklin_outcome, # drenew_capacity_nh_share
+            predictors = aklin_predictors, # 9 Variables
+            interactions = aklin_interaction, # oilcrude_price2007dollar_bp x lrenewpc
+            cores = 5, 
+            placebo_iterations = 100) 
+
+```
+
+*Note*: Compilation Time = 1.06 Minutes 
+
+
+#### **Diagnostic Output Retrieval**
+
+```{r PAI Function, eval = F}
+
+pai_diagnostic_retrieval <- function(output, 
+                                     diagnostic, 
+                                     type, 
+                                     variables = NULL, 
+                                     combine_plots = FALSE){...}
+```
+
+
+-   `output` PAI Object (ex: `pai_test`)
+-   `diagnostic` PAI sequence to retrieve. Options: `push`, `placebo`, `bootstrap`, or `summary`.
+-   `type` Type of diagnostic to retrieve. Options: `figure`, `data`, or `distribution` (*bootstrap only*)
+-   `variables` Vector of variable names to filter diagnostic (ex: `c('var2', 'var3')`). Defaults to *all*
+-   `combine_plots` If `TRUE`, Returns multi-variable diagnostic figures as a single object using `cowplot` (CRAN). 
+
+
+##### **Placebo Iterations**
+
+```{r placebo figure, echo=TRUE}
+
+pai_diagnostic_retrieval(output = pai_test, 
+                         diagnostic = 'placebo', 
+                         type = 'figure')
+
+```
+
+*Note*: For continuous vars, change represents change in RMSE. For Binomial terms, it represents predictive accuracy. 
+
+##### **Push Protocol**
+
+```{r push figure, echo=TRUE}
+
+pai_diagnostic_retrieval(output = pai_test, 
+                         diagnostic = 'push', 
+                         type = 'figure',
+                         combine_plots = TRUE, 
+                         variables = c('traditional_electricity_share', 'renewablecapacity_3yr_average'))
+
+```
+
+*Note*: Filtered to only return `tradititional_electricity_share` and `renewablecapacity_3yr_average` variables.
+
+##### **Bootstrap Distribution**
+
+```{r boostrap distribution figure, echo=TRUE}
+
+pai_diagnostic_retrieval(output = pai_test, 
+                         diagnostic = 'bootstrap', 
+                         type = 'distribution',
+                         combine_plots = TRUE)
+
+```
+
+##### **Bootstrap Variable-Level**
+
+```{r boostrap variables figure, echo=TRUE}
+
+pai_diagnostic_retrieval(output = pai_test, 
+                         diagnostic = 'bootstrap', 
+                         type = 'figure',
+                         combine_plots = TRUE, 
+                         variables = c('year'))
+
+```
+
+*Note*: Filtered to only return `year` variable.
+
+##### **Summary Output**
+
+```{r summary_output, echo=TRUE}
+
+pai_diagnostic_retrieval(output = pai_test, 
+                         diagnostic = 'summary')
+
+```
