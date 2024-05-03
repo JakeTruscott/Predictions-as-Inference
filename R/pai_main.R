@@ -502,9 +502,9 @@ pai <- function(data, #Data
             shuffled_predictions <- predict(output$declared_model, newdata = shuffle_data, na.action = na.pass) # Predict using the shuffled data
 
             if (parameters[['outcome_type']] == 'Binomial'){
-              accuracy_change <- mean(shuffled_predictions != original_predictions) #Get Pred Accuracy Change if Binomial DV
+              accuracy_change <- mean(shuffled_predictions - original_predictions)
             } else {
-              accuracy_change <- sqrt(mean((shuffled_predictions - original_predictions)^2)) #Get Root Mean Squared Error Change in Continuous DV
+              accuracy_change <- mean(shuffled_predictions - original_predictions)
             }
 
             placebo_temp <- data.frame(rep_count = rep, variable = var, accuracy_change = accuracy_change) # Store the accuracy change
@@ -1098,8 +1098,7 @@ pai <- function(data, #Data
 
     } # Diagnostic Plots & Stats
 
-  } #Dependency Functions
-  set.seed(seed) #Set Random Seed (Defaults to 1234)
+  } #Dependency Functions  set.seed(seed) #Set Random Seed (Defaults to 1234)
 
   output <- list()
 

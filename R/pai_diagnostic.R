@@ -220,8 +220,7 @@ pai_diagnostic_retrieval <- function(output,
 }
 
 
-pai_diagnostic_retrieval(output = temp_pai,
-               diagnostic = 'push',
+pai_diagnostic_retrieval(output = output,
+               diagnostic = 'placebo',
                type = 'figure',
-               variables = c('traditional_electricity_share', 'renewablecapacity_3yr_average'),
                combine_plots = T)
