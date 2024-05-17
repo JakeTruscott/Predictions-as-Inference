@@ -11,7 +11,7 @@
 #'
 #' @examples
 #' Placebo Example
-#' placebo <- pai_diagnostic_retrieval(output = output, diagnostic = 'placebo')
+#' placebo <- pai_diagnostic_retrieval(output = output, diagnostic = 'all')
 #' Push Example with combined plots and subset of var2 and var4
 #' push <- pai_diagnostic_retrieval(output = output, diagnostic = 'push', type = 'figure', variables = c('var2', 'var4'), combine_plots = TRUE)
 #' Bootstrap Example with variable-level plots
@@ -29,22 +29,81 @@ pai_diagnostic_retrieval <- function(output,
 
   if (diagnostic == 'placebo'){
 
-    if (type == 'figure'){
+    if(output$parameters$outcome_type == 'Binomial'){
+      title_label = ' Predictive Accuracy '
+    } else {
+      title_label = ' RMSE '
+    }
+
+    if (type == 'all'){
+
+      full <- diagnostic_output$placebo_full
+      x_label = full$labels$x
+      x_label = gsub('\\n', '', x_label)
+      y_label = full$labels$y
+      y_label = gsub('\\n', '', y_label)
+      CI <- diagnostic_output$placebo_CI
+      bootstrap <- diagnostic_output$bootstrap_omit_information
+      #title_label = full$labels$y
+      #title_label = gsub('\\n', '', title_label)
+      full$labels$x = NULL
+      CI$labels$y = NULL
+      CI$labels$x = NULL
+      bootstrap$labels$x = NULL
+      bootstrap$labels$y = NULL
 
       if (is.null(variables)){
-        diagnostic_retrieved <- diagnostic_output #Returns Full Placebo Figure
+        full = full
+        CI = CI
+        bootstrap = bootstrap
       } else {
-        diagnostic_retrieved <- diagnostic_output %+% subset(diagnostic_output$data, var %in% variables) #Returns Placebo Figure Filtered by Var(s)
+        full = full %+% subset(full$data, var %in% variables)
+        CI = CI %+% subset(CI$data, var %in% variables)
+        bootstrap = bootstrap %+% subset(bootstrap$data, dropped_var %in% variables)
       } # If Variable(s) Declared
 
+      full_figure <- list(full + theme(legend.position = 'top'))
+      other_figures <- list(CI  + labs(title = paste0('Distribution of ', title_label, '\nFrom Placebo Shuffling')) + theme(plot.title = element_text(hjust = 0.5)),
+                            bootstrap  + labs(title = paste0('Distribution of ', title_label, '\nAfter Dropping Information')) + theme(plot.title = element_text(hjust = 0.5)))
+      temp_figure <- cowplot::plot_grid(plotlist = full_figure, align = 'v')
+      other_figure <- cowplot::plot_grid(plotlist = other_figures, ncol = 2, align = 'v')
+
+      diagnostic_retrieved <- cowplot::plot_grid(temp_figure, other_figure, ncol = 1, rel_heights = c(2.5, 2))
+
+    } else if (type == 'figure'){
+
+      if (is.null(variables)){
+        diagnostic_retrieved <- diagnostic_output$placebo_full #Returns Full Placebo Figure
+      } else {
+        diagnostic_retrieved <- diagnostic_output$placebo_full %+% subset(diagnostic_output$placebo_full$data, var %in% variables) #Returns Placebo Figure Filtered by Var(s)
+      } # If Variable(s) Declared
+
+    } else if (type == 'bootstrap_drop_vars'){
+
+      if (is.null(variables)){
+        diagnostic_retrieved <- diagnostic_output$bootstrap_omit_information #Returns Full Placebo Figure
+      } else {
+        diagnostic_retrieved <- diagnostic_output$bootstrap_omit_information %+% subset(diagnostic_output$bootstrap_omit_information$data, var %in% variables) #Returns Placebo Figure Filtered by Var(s)
+      } # If Variable(s) Declared
+
+
+    } else if (type == 'placebo_confidence'){
+
+      if (is.null(variables)){
+        diagnostic_retrieved <- diagnostic_output$placebo_CI #Returns Full Placebo Figure
+      } else {
+        diagnostic_retrieved <- diagnostic_output$placebo_CI %+% subset(diagnostic_output$placebo_CI$data, var %in% variables) #Returns Placebo Figure Filtered by Var(s)
+      } # If Variable(s) Declared
 
     } else {
 
       diagnostic_retrieved <- diagnostic_output$data #Returns Placebo Fit Data
 
-    } #If Type is Figure vs. Data
+    }
 
-  } #If Diagnostic = 'Placebo'
+
+
+  } #If Diagnostic is 'Placebo' # all, figure, placebo_confidence, bootstrap_drop_var
 
   if (diagnostic == 'push'){
 
@@ -183,7 +242,7 @@ pai_diagnostic_retrieval <- function(output,
 
     summary_diagnostics <- list()
 
-    summary_diagnostics[['Out of Sample Accuracy']] <- data.frame(output$declared_model$results)
+    summary_diagnostics[['Performance Metrics']] <- data.frame(output$declared_model$results)
     summary_diagnostics[['Variable Importance']] <- data.frame(varImp(output$declared_model)[1])
 
     predictions <- predict(output$declared_model, newdata = output$parameters$test_set)
@@ -197,6 +256,13 @@ pai_diagnostic_retrieval <- function(output,
       summary_diagnostics['Precision'] <- conf_matrix$byClass["Precision"]
       summary_diagnostics['Recall'] <-  conf_matrix$byClass["Recall"]
       summary_diagnostics['F1'] <-  conf_matrix$byClass["F1"]
+
+      final_model <- output$declared_model
+      train_data <- data.frame(output$parameters$train_set, check.names = F)
+      trainPred <- predict(final_model, newdata = train_data)
+      in_sample_accuracy <- sum(trainPred == train_data$direction) / nrow(train_data)
+      summary_diagnostics['In-Sample Accuracy'] <- in_sample_accuracy
+
 
     } else {
 
@@ -222,5 +288,5 @@ pai_diagnostic_retrieval <- function(output,
 
 pai_diagnostic_retrieval(output = output,
                diagnostic = 'placebo',
-               type = 'figure',
+               type = 'bootstrap_drop_vars',
                combine_plots = T)

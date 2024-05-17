@@ -40,12 +40,6 @@ pai <- function(data, #Data
 ){
 
 
-  start_time <- Sys.time() #Start Time
-  message("\033[34m-------------------------------------------------------------------\033[0m\n",
-          "\033[32m---------------------- Beginning PAI Process ----------------------\033[0m\n",
-          "\033[34m-------------------------------------------------------------------\033[0m\n") #Start Message
-
-
   {
 
     pai_params_wrapper <- function(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed){
@@ -249,6 +243,8 @@ pai <- function(data, #Data
           dv <- unname(sparse_check['outcome'][1]) #Get DV
           sparse_factors <- unname(sparse_check['sparse_factors']) #Get Sparse Factors
           factors <- factors[!factors %in% dv] #Remove DV
+          factors <- factors[!factors %in% unlist(sparse_factors)]
+          non_factors <- non_factors[!non_factors %in% unlist(sparse_factors)]
 
           parameters[['non_factors']] <- non_factors #Put Non-Factors in parameters
           parameters[['factors']] <- factors #Same for factors
@@ -316,8 +312,32 @@ pai <- function(data, #Data
           parameters[['predictors']] <- parameters$predictors[!parameters$predictors %in% unlist(parameters$sparse_factors)] #Toss Sparse Predicors
           parameters[['interactions']] <- parameters$interactions[!parameters$interactions %in% unlist(parameters$sparse_factors)] #Toss Interactions w/ Sparse Variables
 
-          parameters[['drop_vars']] <- parameters$drop_vars[!parameters$drop_vars %in% unlist(parameters$sparse_factors)] #Toss Sparse Factors from Drop Vars
+          if (parameters[['list_drop_vars']] == TRUE){
 
+            for (list in 1:length(parameters[['drop_vars']])){
+              temp_list <- parameters[['drop_vars']][list]
+              temp_list_name <- names(parameters[['drop_vars']][list])
+              temp_list <- unlist(temp_list)[!unlist(temp_list) %in% parameters$sparse_factors]
+              parameters[['drop_vars']][[as.character(temp_list_name)]] <- c(unname(temp_list))
+            }
+
+          } else {
+
+            parameters[['drop_vars']] <- parameters$drop_vars[!parameters$drop_vars %in% unlist(parameters$sparse_factors)] #Toss Sparse Factors from Drop Vars
+
+          }
+
+
+          test_set <- data.frame(parameters$test_set, check.names = F)
+          test_set <- test_set[!names(test_set) %in% unlist(parameters$sparse_factors)] #Remove Sparse Vars
+          train_set <- data.frame(parameters$train_set, check.names = F)
+          train_set <- train_set[!names(train_set) %in% unlist(parameters$sparse_factors)] #Remove Sparse Vars
+          full_data <- data.frame(parameters$full_data, check.names = F)
+          full_data <- full_data[!names(full_data) %in% unlist(parameters$sparse_factors)] #Remove Sparse Vars
+
+          parameters[['test_set']] <- test_set #Resend to Params
+          parameters[['train_set']] <- train_set #Resend to Params
+          parameters[['full_data']] <- full_data #Resend to Params
 
         } # Get Formula Vars
 
@@ -359,7 +379,7 @@ pai <- function(data, #Data
           next
         }
 
-      } #Check If Factor (4 or Less Unique Values)
+      } #Check If Factor (# or Less Unique Values)
 
       sparse_factors <- c()
 
@@ -380,6 +400,19 @@ pai <- function(data, #Data
 
       remaining_factors <- factor_variables[!factor_variables %in% c(sparse_factors)]
 
+
+      for (var in variables){
+
+        temp_var <- data[[var]]
+
+        if (length(unique(temp_var)) == 1){
+          sparse_factors <- c(sparse_factors, var)
+        }
+
+
+      }
+
+
       sparse_check <- list()
       sparse_check[['outcome']] <- dv
       sparse_check[['non-factors']] <- c(variables[!variables %in% factor_variables])
@@ -387,7 +420,7 @@ pai <- function(data, #Data
       if (is.null(sparse_factors)){
         sparse_check[['sparse_factors']] <- NULL
       } else {
-        sparse_check['sparse_factors'] <- c(sparse_factors)
+        sparse_check[['sparse_factors']] <- unique(sparse_factors)
       }
 
       return(sparse_check) #Return List w/ Factors & Sparse Factors
@@ -437,16 +470,22 @@ pai <- function(data, #Data
         variables <- c(unlist(parameters$predictors), unlist(parameters$interactions))
       }  # Get Variables
 
+
       original_predictions <- predict(output$declared_model, data.frame(parameters$test_set, check.names = F), na.action = na.pass)
+      true_values <- data.frame(parameters$test_set, check.names = F)[parameters$outcome][,1] #Set Real Data
+
 
       for (rep in 1:as.numeric(parameters$placebo_iterations)){
 
         if (parameters$list_drop_vars == TRUE){
 
+          variables <- parameters$drop_vars
+
           for (drop_group in 1:length(variables)){
+
             shuffle_data <- data.frame(parameters$test_set, check.names = F) #Get Test Data
 
-            temp_drop_group <- unlist(variables[drop_group])
+            temp_drop_group <- unlist(unname(variables[drop_group]))
 
             for (var_name in 1:length(temp_drop_group)){
               shuffle_data[[var_name]] <- sample(shuffle_data[[var_name]])
@@ -463,11 +502,16 @@ pai <- function(data, #Data
 
             shuffled_predictions <- predict(declared_model, newdata = shuffle_data, na.action = na.pass) # Predict using the shuffled data
 
-
             if (parameters[['outcome_type']] == 'Binomial'){
-              accuracy_change <- mean(shuffled_predictions != original_predictions) #Get Pred Accuracy Change if Binomial DV
+
+              original_accuracy <- mean(original_predictions == true_values)
+              shuffled_accuracy <- mean(shuffled_predictions == true_values)
+              accuracy_change <- shuffled_accuracy - original_accuracy #Get Pred Accuracy Change if Binomial DV
+
             } else {
-              accuracy_change <- sqrt(mean((shuffled_predictions - original_predictions)^2)) #Get Root Mean Squared Error Change in Continuous DV
+              original_rmse <- sqrt(mean((original_predictions - true_values)^2))
+              shuffled_rmse <- sqrt(mean((shuffled_predictions - true_values)^2))
+              accuracy_change <- original_rmse - shuffled_rmse #Get Root Mean Squared Error Change in Continuous DV
             }
 
             placebo_temp <- data.frame(rep_count = rep, variable = names(variables[drop_group]), accuracy_change = accuracy_change) # Store the accuracy change
@@ -502,13 +546,24 @@ pai <- function(data, #Data
             shuffled_predictions <- predict(output$declared_model, newdata = shuffle_data, na.action = na.pass) # Predict using the shuffled data
 
             if (parameters[['outcome_type']] == 'Binomial'){
-              accuracy_change <- mean(shuffled_predictions - original_predictions)
+
+              original_accuracy <- mean(original_predictions == true_values)
+              shuffled_accuracy <- mean(shuffled_predictions == true_values)
+              accuracy_change <- shuffled_accuracy - original_accuracy #Get Pred Accuracy Change if Binomial DV
+
             } else {
-              accuracy_change <- mean(shuffled_predictions - original_predictions)
+              original_rmse <- sqrt(mean((original_predictions - true_values)^2))
+              shuffled_rmse <- sqrt(mean((shuffled_predictions - true_values)^2))
+              accuracy_change <- original_rmse - shuffled_rmse #Get Root Mean Squared Error Change in Continuous DV
             }
 
             placebo_temp <- data.frame(rep_count = rep, variable = var, accuracy_change = accuracy_change) # Store the accuracy change
-            placebos <- dplyr::bind_rows(placebos, placebo_temp)
+            placebos <- dplyr::bind_rows(placebos, placebo_temp) # Store
+
+
+
+
+
 
           } #For Var in Variables
 
@@ -521,7 +576,9 @@ pai <- function(data, #Data
 
       } #For Rep in Placebo Iterations
 
-      placebo <- placebos %>%
+      placebos_all_returned <- placebos
+
+      placebo_summary <- placebos %>%
         select(-c(rep_count)) %>%
         rename(var = variable) %>%
         group_by(var) %>%
@@ -532,6 +589,10 @@ pai <- function(data, #Data
                   max_change = max(accuracy_change),
                   min_change = min(accuracy_change))
 
+      placebo <- list()
+      placebo[['placebo_summary']] <- placebo_summary
+      placebo[['all_returned']] <- placebos_all_returned
+
       return(placebo)
 
     } # Placebo Protocol
@@ -539,6 +600,7 @@ pai <- function(data, #Data
     dropping_vars <- function(parameters, output){
 
       fit_change <- data.frame() #Initialize Empty DF to Store Fit Changes from Dropping Vars
+      bootstrap_drop_var <- list() #Initialize Empty List to Store Bootstrap Output
 
       vars_to_drop <- c() #Initialize Empty Object for Vars to Drop (Based on Params Declaration)
 
@@ -614,6 +676,64 @@ pai <- function(data, #Data
 
             fit_change <- dplyr::bind_rows(fit_change, change_temp) #Append to fit_change
 
+            {
+
+              test_data = data.frame(output$parameters$test_set, check.names = F) #Grab Test Data
+              test_data = test_data[!names(test_data) %in% unlist(parameters$sparse_factors)]
+
+              for (var in 1:ncol(test_data)){
+                temp_column <- data.frame(test_data[,var])
+                names(temp_column)[1] <- names(test_data[var])
+                colon_check <- gsub('\\.', ':', names(test_data[var]))
+                asterisk_check <- gsub('\\.', '*', names(test_data[var]))
+                if (colon_check %in% unlist(parameters$interactions)){
+                  names(test_data)[var] <- colon_check
+                }
+                if (asterisk_check %in% unlist(parameters$interactions)){
+                  names(test_data)[var] = asterisk_check
+                }
+              } #Fix bootstrap Column Names
+
+              outcome_variable = parameters[['outcome']] #Set Outcome Var
+
+              predictions <- predict(temp_drop_var_declared_model, newdata = test_data) #Get Base Predictions from Dropped Var Model
+              comparison_set <- data.frame(parameters$test_set, check.names = F)[outcome_variable][,1] #Set Real Data
+
+              if (parameters[['outcome_type']] == 'Binomial'){
+                accuracy <- mean(predictions == comparison_set) #Get Predictive Accuracy from Predictions v. Real Data if Binomial DV
+              } else {
+                accuracy <- sqrt(mean((predictions - comparison_set)^2)) #Get Root Mean Squared Error from Predictions v. Real Data if Continuous DV
+              }
+
+
+              bootstrap_output <- list() #Create Empty List to Store Bootstrap Outputs
+
+              for (i in 1:100) {
+                bootstrap_indices <- sample(nrow(test_data), replace = TRUE) #Generate Bootstrap Sample
+                bootstrap_test_data <- test_data[bootstrap_indices, ] #Subset Test Data by Sample Indeces
+                bootstrap_test_data <- bootstrap_test_data[, !names(bootstrap_test_data) == parameters$outcome, drop = FALSE] #Remove DV
+                bootstrap_predictions <- predict(output$declared_model, newdata = bootstrap_test_data) #Predict on bootstrap Sample
+
+                if (parameters[['outcome_type']] == 'Binomial'){
+                  bootstrap_accuracy <- mean(bootstrap_predictions - predictions) #Calculate Accuracy if Binomial
+
+                } else {
+                  bootstrap_accuracy <- mean(bootstrap_predictions - predictions) #Get Root Mean Squared Error from Predictions v. Real Data if Continuous DV
+                }
+
+
+                bootstrap_output[[i]] <- list(bootstrap_data = bootstrap_test_data,
+                                              bootstrap_accuracies = bootstrap_accuracy) #Append to List
+
+              } #Compile Predictions from Bootstrapped Samples of Test Data
+
+
+
+
+            } #Bootstrap
+
+            bootstrap_drop_var[[as.character(temp_combination_row$dropped_var)]] <- bootstrap_output
+
             message("\033[37m           Completed Variable Omission For \033[0m", temp_combination_row$dropped_var) #Print Update
 
           }
@@ -624,12 +744,13 @@ pai <- function(data, #Data
 
           combinations <- data.frame()
           vars_to_drop <- parameters$drop_vars
+          other_vars <- parameters$predictors
 
           for (drop_var in 1:length(vars_to_drop)){
 
             temp_drop_var <- parameters$drop_vars[[drop_var]] # Retrieve Temporary Var
-            other_vars <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)] #Retrieve Other Vars
-            other_vars <- other_vars[!grepl(temp_drop_var, other_vars)] #Further Remove if Temp Var in Interaction
+            other_vars <- parameters$predictors[!parameters$predictors %in% unlist(temp_drop_var)] #Retrieve Other Vars
+            other_vars <- other_vars[!grepl(paste(temp_drop_var, collapse = "|"), other_vars)] #Further Remove if Temp Var in Interaction
 
             other_vars <- ifelse(other_vars %in% unlist(parameters$factors), paste0('factor(', other_vars, ')'), other_vars)
             other_interactions <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)]
@@ -656,7 +777,7 @@ pai <- function(data, #Data
 
             temp_combination <- data.frame(
               temp_combination = temp_combination,
-              dropped_var = vars_to_drop[drop_var]) #Collapse Into Single Temp DF
+              dropped_var = names(vars_to_drop[drop_var])) #Collapse Into Single Temp DF
 
             combinations <- dplyr::bind_rows(combinations, temp_combination) #Add to Combinations Frame
 
@@ -692,6 +813,64 @@ pai <- function(data, #Data
 
             fit_change <- dplyr::bind_rows(fit_change, change_temp) #Append to fit_change
 
+            {
+
+              test_data = data.frame(output$parameters$test_set, check.names = F) #Grab Test Data
+              test_data = test_data[!names(test_data) %in% unlist(parameters$sparse_factors)]
+
+              for (var in 1:ncol(test_data)){
+                temp_column <- data.frame(test_data[,var])
+                names(temp_column)[1] <- names(test_data[var])
+                colon_check <- gsub('\\.', ':', names(test_data[var]))
+                asterisk_check <- gsub('\\.', '*', names(test_data[var]))
+                if (colon_check %in% unlist(parameters$interactions)){
+                  names(test_data)[var] <- colon_check
+                }
+                if (asterisk_check %in% unlist(parameters$interactions)){
+                  names(test_data)[var] = asterisk_check
+                }
+              } #Fix bootstrap Column Names
+
+              outcome_variable = parameters[['outcome']] #Set Outcome Var
+
+              predictions <- predict(temp_drop_var_declared_model, newdata = test_data) #Get Base Predictions from Dropped Var Model
+              comparison_set <- data.frame(parameters$test_set, check.names = F)[outcome_variable][,1] #Set Real Data
+
+              if (parameters[['outcome_type']] == 'Binomial'){
+                accuracy <- mean(predictions == comparison_set) #Get Predictive Accuracy from Predictions v. Real Data if Binomial DV
+              } else {
+                accuracy <- sqrt(mean((predictions - comparison_set)^2)) #Get Root Mean Squared Error from Predictions v. Real Data if Continuous DV
+              }
+
+
+              bootstrap_output <- list() #Create Empty List to Store Bootstrap Outputs
+
+              for (i in 1:50) {
+                bootstrap_indices <- sample(nrow(test_data), replace = TRUE) #Generate Bootstrap Sample
+                bootstrap_test_data <- test_data[bootstrap_indices, ] #Subset Test Data by Sample Indeces
+                bootstrap_test_data <- bootstrap_test_data[, !names(bootstrap_test_data) == parameters$outcome, drop = FALSE] #Remove DV
+                bootstrap_predictions <- predict(output$declared_model, newdata = bootstrap_test_data) #Predict on bootstrap Sample
+
+                if (parameters[['outcome_type']] == 'Binomial') {
+                  bootstrap_accuracy <- mean(as.numeric(as.character(bootstrap_predictions)) - as.numeric(as.character(predictions)))
+                } else {
+                  bootstrap_accuracy <- mean(bootstrap_predictions - predictions)
+                }
+
+
+
+                bootstrap_output[[i]] <- list(bootstrap_data = bootstrap_test_data,
+                                              bootstrap_accuracies = bootstrap_accuracy) #Append to List
+
+              } #Compile Predictions from Bootstrapped Samples of Test Data
+
+
+
+
+            } #Bootstrap
+
+            bootstrap_drop_var[[as.character(temp_combination_row$dropped_var)]] <- bootstrap_output
+
             message("\033[37m           Completed Variable Omission For \033[0m", temp_combination_row$dropped_var) #Print Update
 
           }
@@ -699,8 +878,10 @@ pai <- function(data, #Data
 
       } #Indicate Source of Drop Vars (List Objects or Declared/Assigned Vars)
 
+      omitting_vars <- list(fit_change = fit_change,
+                            bootstrap_drop_var = bootstrap_drop_var)
 
-      return(fit_change)
+      return(omitting_vars)
 
     } #Omitting Variables
 
@@ -720,17 +901,23 @@ pai <- function(data, #Data
 
       for (variable in 1:length(variables)){
         temp_var = variables[variable] #Get Var
-        data = parameters$full_data #Get Data (Test Data)
+        data = data.frame(parameters$test_set, check.names = F) #Get Data (Test Data)
         temp_var_distribution = unique(data[,temp_var]) #Get Distribution of Temp Var
 
-        if (length(temp_var_distribution) <= 4){
-          is_factor = TRUE #If factor TRUE
-          steps = unique(temp_var_distribution)
-        } else {
-          is_factor = FALSE #If NOT Factor (FALSE)
-          sd_var <- sd(data[,temp_var]) #Get Standard Deviation
-          steps <- seq(-2*sd_var, 2*sd_var, (4*sd_var)/100) #Calculate Steps (+/- 2 Sds)
-        } #If Factor (Steps = Levels); Else (Steps = +/- 2 Sds)
+        factor_vars <- output$parameters$factors
+        is_factor = TRUE # Default is_factor = T
+
+        tryCatch({
+          sd_var <- sd(data[, temp_var])
+          steps <- seq(-2 * sd_var, 2 * sd_var, (4 * sd_var) / 100)
+          is_factor = FALSE #Test to see if not actually factor/categorical distribution
+        }, error = function(e){
+          is_factor = TRUE # If it is Factor, Keep it True
+        })
+
+        if (is_factor == TRUE || temp_var %in% factor_vars){
+          next
+        }
 
 
         var_push_predictions <- data.frame() #Initialize Empty DF for Push Predictions
@@ -775,6 +962,7 @@ pai <- function(data, #Data
         dif <- pred - true
         return(dif)
       } else {
+
         Z[[var]] <- Z[[var]] + stepper
         pred <- predict(mod, Z)
         true <- Z[[outcome_var]]
@@ -783,6 +971,8 @@ pai <- function(data, #Data
         return(c(onecount, acc))
       }
 
+      preds <- predict(mod, Z)
+      return(length(which(trues==preds))/length(preds))
 
 
     } #Predictive Accuracy from Steps
@@ -811,8 +1001,7 @@ pai <- function(data, #Data
         if (asterisk_check %in% unlist(parameters$interactions)){
           names(test_data)[var] = asterisk_check
         }
-      } #Fix Boostrap Column Names
-
+      } #Fix bootstrap Column Names
 
       outcome_variable = parameters[['outcome']] #Set Outcome Var
 
@@ -832,7 +1021,7 @@ pai <- function(data, #Data
         bootstrap_indices <- sample(nrow(test_data), replace = TRUE) #Generate Bootstrap Sample
         bootstrap_test_data <- test_data[bootstrap_indices, ] #Subset Test Data by Sample Indeces
         bootstrap_test_data <- bootstrap_test_data[, !names(bootstrap_test_data) == parameters$outcome, drop = FALSE] #Remove DV
-        bootstrap_predictions <- predict(output$declared_model, newdata = bootstrap_test_data) #Predict on Boostrap Sample
+        bootstrap_predictions <- predict(output$declared_model, newdata = bootstrap_test_data) #Predict on bootstrap Sample
 
         if (parameters[['outcome_type']] == 'Binomial'){
           bootstrap_accuracy <- mean(bootstrap_predictions == test_data[parameters[['outcome']]][bootstrap_indices,]) #Calculate Accuracy if Binomial
@@ -841,7 +1030,7 @@ pai <- function(data, #Data
           bootstrap_accuracy <- sqrt(mean((bootstrap_predictions - test_data[parameters[['outcome']]][bootstrap_indices,])^2)) #Get Root Mean Squared Error from Predictions v. Real Data if Continuous DV
         }
 
-        bootstrap_output[[i]] <- list(boostrap_data = bootstrap_test_data,
+        bootstrap_output[[i]] <- list(bootstrap_data = bootstrap_test_data,
                                       bootstrap_accuracies = bootstrap_accuracy) #Append to List
 
       } #Compile Predictions from Bootstrapped Samples of Test Data
@@ -860,7 +1049,15 @@ pai <- function(data, #Data
       {
 
         placebo_vars <- output$placebo$var
+
         {
+
+          dv_type = output$parameters$outcome_type
+          if (dv_type == 'Binomial'){
+            y_label = 'Change in Predictive Accuracy\n'
+          } else {
+            y_label = 'Change in RMSE\n'
+          }
 
           placebo_figure <- output$fit_change %>%
             filter(var %in% placebo_vars) %>%
@@ -870,10 +1067,9 @@ pai <- function(data, #Data
             geom_hline(yintercept = 0, linetype = 2, linewidth = 1) +
             geom_rect(aes(xmin = var_numeric - 0.15, xmax = var_numeric + 0.15,
                           ymin = min_change, ymax = max_change, fill = 'Range of Predicted\nAccuracy from Placebos'), colour = 'gray5') +
-            geom_rect(aes(xmin = var_numeric - 0.15, xmax = var_numeric + 0.15,
-                          ymin = lower_bound, ymax = upper_bound, fill = '95% Confidence\nInterval'), colour = 'gray5') +
+            #geom_rect(aes(xmin = var_numeric - 0.15, xmax = var_numeric + 0.15, ymin = lower_bound, ymax = upper_bound, fill = '95% Confidence\nInterval'), colour = 'gray5') +
             geom_point(aes(y = fit_change, colour = 'Prediction from Model Fit\nAfter Dropping Information'), size = 3, shape = 10) +
-            labs(y = ' ',
+            labs(y = y_label,
                  x = '\nVariable\n',
                  fill = ' ',
                  colour = ' ') +
@@ -885,21 +1081,124 @@ pai <- function(data, #Data
                   axis.text = element_text(size = 10, colour = 'black'),
                   axis.title = element_text(size = 12, colour = 'black'))
 
+
         } #Render Placebo Figure
+        {
+
+          placebo_CI_figure <- output$placebo_all %>%
+            rename(var = variable) %>%
+            ggplot(aes(x = accuracy_change, y = factor(var))) +
+            geom_vline(xintercept = 0, linetype = 2, colour = 'gray5') +
+            geom_density_ridges(alpha = 0.75, scale = 0.9) +
+            coord_flip() +
+            labs(x = y_label,
+                 y = '\nVariable\n',
+                 fill = ' ',
+                 colour = ' ') +
+            scale_fill_manual(values = c("gray", "gray50")) +
+            scale_colour_manual(values = 'black') +
+            theme_minimal() +
+            theme(legend.position = 'bottom',
+                  panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
+                  axis.text = element_text(size = 10, colour = 'black'),
+                  axis.title = element_text(size = 12, colour = 'black'))
+
+        } # Render Placebo Confidence Interval Figure
+        {
+
+          bootstrap_omit_vars <- data.frame()
+          bootstrap_output <- output$omitting_variables_bootstrap
+
+          {
+
+            for (i in 1:length(bootstrap_output)){
+
+              temp_bootstrap_list <- bootstrap_output[[i]]
+
+              for (b in 1:length(temp_bootstrap_list)){
+                temp_bootstrap_data <- temp_bootstrap_list[[b]]$bootstrap_data
+
+                if (is.null(temp_bootstrap_data)){
+                  next
+                } #Error Handling (Skip)
+
+                temp_bootstrap_accuracy <- temp_bootstrap_list[[b]]$bootstrap_accuracies #Get Temp Accuracy
+                temp_bootstrap <- data.frame(accuracy = temp_bootstrap_accuracy, bootstrap_id = b, dropped_var = names(bootstrap_output)[i]) #Combine
+                bootstrap_omit_vars <- dplyr::bind_rows(bootstrap_omit_vars, temp_bootstrap) #Append
+
+              }
+
+            }
+
+          } # Retrieve & Organization Bootstrap Data
+
+          {
+
+            bootstrap_distribution <- bootstrap_omit_vars %>%
+              select(accuracy, bootstrap_id, dropped_var) %>%
+              unique() %>%
+              group_by(dropped_var) %>%
+              mutate(median = median(accuracy), #Median
+                     mean = mean(accuracy), #Mean
+                     conf_lower = as.numeric(quantile(accuracy, c((1 - 0.95) / 2, 1 - (1 - 0.95) / 2))[1]), #2.5%
+                     conf_higher = as.numeric(quantile(accuracy, c((1 - 0.95) / 2, 1 - (1 - 0.95) / 2))[2]), #97.5
+                     max = max(accuracy), #Max
+                     min = min(accuracy), #Min,
+                     bootstraps = max(bootstrap_id))
+
+          } # Density of Accuracies by Var When Dropped
+
+          {
+
+            dv_type = output$parameters$outcome_type
+            if (dv_type == 'Binomial'){
+              y_label = 'Change in Predictive Accuracy After Omitting Information\n'
+            } else {
+              y_label = 'Change in RMSE After Omitting Information\n'
+            }
+
+            placebo_bootstrap_omit_figure <- bootstrap_distribution %>%
+              ggplot(aes(x = accuracy, y = factor(dropped_var))) +
+              geom_vline(xintercept = 0, linetype = 2, colour = 'gray5') +
+              geom_density_ridges(alpha = 0.75, scale = 0.9) +
+              coord_flip() +
+              labs(x = y_label,
+                   y = '\nVariable\n',
+                   fill = ' ',
+                   colour = ' ') +
+              scale_fill_manual(values = c("gray", "gray50")) +
+              scale_colour_manual(values = 'black') +
+              theme_minimal() +
+              theme(legend.position = 'bottom',
+                    panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
+                    axis.text = element_text(size = 10, colour = 'black'),
+                    axis.title = element_text(size = 12, colour = 'black'))
+
+
+          } #Plot Density of Accuracy Change by Var When Dropped
+
+        } #bootstrap Predictions from Dropping
 
         if (length(placebo_vars) >= 5){
           placebo_figure <- placebo_figure +
             theme(axis.text.x = element_text(angle = 45, hjust = 1))
-        }
+          placebo_CI_figure <- placebo_CI_figure +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1))
+          placebo_bootstrap_omit_figure <- placebo_bootstrap_omit_figure +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1))
+        } # Change X-Axis Label Tilt if More than 5 Vars (Avoids Overlapping Var Labels)
 
-        diagnostics[['placebo']] <- placebo_figure #Add Placebo Figure to Diagnostic
+        diagnostics[['placebo']] <- list()
 
+        diagnostics[['placebo']][['placebo_full']] <- placebo_figure #Add Placebo Figure to Diagnostic
+        diagnostics[['placebo']][['placebo_CI']] <- placebo_CI_figure #Add Placebo Figure to Diagnostic
+        diagnostics[['placebo']][['bootstrap_omit_information']] <- placebo_bootstrap_omit_figure # Add Omit Variable Figure to Diagnostic
 
       } #Placebo Iterations
 
       {
 
-        linear_vars <- output$parameters$predictors
+        linear_vars <- names(output$push)
         parameters <- output$parameters
         push_output <- output$push #Grab Push Output
         original_test_data <- data.frame(parameters$test_set, check.names = F)
@@ -976,7 +1275,7 @@ pai <- function(data, #Data
 
           for (i in 1:length(bootstrap_output)){
 
-            temp_bootstrap_data <- bootstrap_output[[i]]$boostrap_data #Get Temp Bootstrap Test Data
+            temp_bootstrap_data <- bootstrap_output[[i]]$bootstrap_data #Get Temp Bootstrap Test Data
 
             if (is.null(temp_bootstrap_data)){
               next
@@ -1001,7 +1300,7 @@ pai <- function(data, #Data
                    conf_higher = as.numeric(quantile(accuracy, c((1 - 0.95) / 2, 1 - (1 - 0.95) / 2))[2]), #97.5
                    max = max(accuracy), #Max
                    min = min(accuracy), #Min,
-                   boostraps = max(bootstrap_id))
+                   bootstraps = max(bootstrap_id))
 
           mean_label <- paste0('Mean (', round(bootstrap_distribution$mean[1], 2), ')')
           median_label <- paste0('Median (', round(bootstrap_distribution$median[1], 2), ')')
@@ -1009,7 +1308,7 @@ pai <- function(data, #Data
           if (output$parameters$outcome_type == 'Binomial'){
             x_label = '\nAccuracy from Bootstrapped Test Sets'
           } else {
-            x_label = '\nRMSE from Boostrapped Test Sets'
+            x_label = '\nRMSE from bootstrapped Test Sets'
           }
 
 
@@ -1086,8 +1385,6 @@ pai <- function(data, #Data
 
           }
 
-          diagnostics$bootstrap$variable_figures$var5
-
 
         } # Confidence Intervals by Var
 
@@ -1098,7 +1395,14 @@ pai <- function(data, #Data
 
     } # Diagnostic Plots & Stats
 
-  } #Dependency Functions  set.seed(seed) #Set Random Seed (Defaults to 1234)
+  } #Dependency Functions
+
+  start_time <- Sys.time() #Start Time
+  message("\033[34m-------------------------------------------------------------------\033[0m\n",
+          "\033[32m---------------------- Beginning PAI Process ----------------------\033[0m\n",
+          "\033[34m-------------------------------------------------------------------\033[0m\n") #Start Message
+
+  set.seed(seed) #Set Random Seed (Defaults to 1234)
 
   output <- list()
 
@@ -1120,14 +1424,16 @@ pai <- function(data, #Data
   message('Beginning Placebo Iterations') #Start Message for Placebo Iterations
 
   placebo <- placebo_shuffle(declared_model, parameters, output) #Run Placebo Iterations
-  output[['placebo']] <- placebo #Append to Output
+  output[['placebo']] <- placebo$placebo_summary #Append to Output
+  output[['placebo_all']] <- placebo$all_returned #Append to Output
 
   message('Beginning Variable Omissions') #Start Message for Placebo Iterations
 
   omitting_variables <- dropping_vars(parameters, output) #Run Omitting Vars
-  output[['omitting_variables']] <- omitting_variables #Append to Output
+  output[['omitting_variables']] <- omitting_variables$fit_change #Append to Output
+  output[['omitting_variables_bootstrap']] <- omitting_variables$bootstrap_drop_var
 
-  fit_change <- left_join(placebo, omitting_variables, by = 'var') #Create Fit Change Frame
+  fit_change <- left_join(placebo$placebo_summary, omitting_variables$fit_change, by = 'var') #Create Fit Change Frame
   output[['fit_change']] <- fit_change #Append to Output
 
   message('Compiling Bootstrapped Confidence Intervals') #Start Message for Placebo Iterations
