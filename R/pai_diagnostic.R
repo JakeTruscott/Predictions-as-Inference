@@ -243,7 +243,10 @@ pai_diagnostic_retrieval <- function(output,
     summary_diagnostics <- list()
 
     summary_diagnostics[['Performance Metrics']] <- data.frame(output$declared_model$results)
-    summary_diagnostics[['Variable Importance']] <- data.frame(varImp(output$declared_model)[1])
+    importance <- varImp(output$declared_model)
+    importance <- as.data.frame(importance$importance[1])
+    names(importance) <- 'Importance'
+    summary_diagnostics[['Variable Importance']] <- importance
 
     predictions <- predict(output$declared_model, newdata = output$parameters$test_set)
 
@@ -257,11 +260,11 @@ pai_diagnostic_retrieval <- function(output,
       summary_diagnostics['Recall'] <-  conf_matrix$byClass["Recall"]
       summary_diagnostics['F1'] <-  conf_matrix$byClass["F1"]
 
-      final_model <- output$declared_model
-      train_data <- data.frame(output$parameters$train_set, check.names = F)
-      trainPred <- predict(final_model, newdata = train_data)
-      in_sample_accuracy <- sum(trainPred == train_data$direction) / nrow(train_data)
-      summary_diagnostics['In-Sample Accuracy'] <- in_sample_accuracy
+      #final_model <- output$declared_model
+      #train_data <- data.frame(output$parameters$train_set, check.names = F)
+      #trainPred <- predict(final_model, newdata = train_data)
+      #in_sample_accuracy <- sum(trainPred == train_data$direction) / nrow(train_data)
+      #summary_diagnostics['In-Sample Accuracy'] <- in_sample_accuracy
 
 
     } else {

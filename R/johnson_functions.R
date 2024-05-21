@@ -11,7 +11,8 @@ library(rlist)
 library(randomForestExplainer)
 numCores <- detectCores()
 
-seed = 254
+#seed = 254
+seed = 1234
 
 '%!in%' <- function(x,y)!('%in%'(x,y))
 
@@ -42,7 +43,7 @@ ttsplit <- function(Z, size=.2,s=seed){
 repeatedforest <- function(y, Z, folds=10, r=3){
   tic()
   set.seed(seed)
-  cls = makeCluster(numCores-1)
+  cls = makeCluster(numCores-5)
   registerDoParallel(cls)
 
   ydex=which(names(Z)==y)
@@ -318,7 +319,7 @@ RF.run <- function(j){
   }
 
 
-  save(modlist, file=paste0(j,'RF.RData'))
+  #save(modlist, file=paste0(j,'RF.RData'))
   return(modlist)
 }
 
@@ -409,6 +410,14 @@ oos.predict <- function(dat, mod, y='direction'){
   return(l/length(p))
 }
 
+
+test_data <- data.frame(js_test$parameters$test_set, check.names = F)
+
+p <- predict(model_254, test_data)
+l <- length(which(p == test_data$direction))
+
+l/length(p)
+
 runjustice <- function(j){
   tic()
   modlist <- RF.run(j)
@@ -418,6 +427,15 @@ runjustice <- function(j){
   save(info, file=paste0(j,'-FullData.RData'))
   toc()
 }
+
+mat <- readRDS("C:/Users/Jake Truscott/OneDrive - purdue.edu/Active Research/SJT_R_Package/JS_Book_Replication/perms.rds")
+gm.only.dat <- ttsplit(mat[[3]])
+RF.gm.only <- repeatedforest(y = 'direction', Z = gm.only.dat$train, folds=10, r=5)
+oos.predict(gm.only.dat, RF.gm.only)
+
+johnson_original <- RF.gm.only
+
+save(johnson_original, file = "C:/Users/Jake Truscott/Documents/GitHub/Prediction-as-Inference/R/Johnson_Original_Output.Rdata")
 
 
 ############################################################################

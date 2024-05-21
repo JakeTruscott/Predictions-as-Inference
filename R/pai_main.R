@@ -39,7 +39,6 @@ pai <- function(data, #Data
                 seed = 1234 #Defaults to 1234
 ){
 
-
   {
 
     pai_params_wrapper <- function(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed){
@@ -534,11 +533,13 @@ pai <- function(data, #Data
               shuffle_data[[var_name]] <- sample(shuffle_data[[var_name]])
             } #Shuffle Any & All Vars Included in Shuffle
 
-            if (!is.null(interaction_vars)){
-              for (interaction in 1:length(interaction_vars)){
-                t <- interaction_vars[[interaction]][[1]]
-                t <- stringr::str_split(t, pattern = '(\\:|\\*)')[[1]]
-                shuffle_data[interaction_vars[interaction]] <- apply(shuffle_data[, t], 1, prod)
+            if (!length(interaction_vars) == 0) {
+              if (!is.null(interaction_vars)){
+                for (interaction in 1:length(interaction_vars)){
+                  t <- interaction_vars[[interaction]][[1]]
+                  t <- stringr::str_split(t, pattern = '(\\:|\\*)')[[1]]
+                  shuffle_data[interaction_vars[interaction]] <- apply(shuffle_data[, t], 1, prod)
+                }
               }
             } # For Interaction Vars, Reconfigure After Shuffling Stand-Alone Terms
 
@@ -697,14 +698,6 @@ pai <- function(data, #Data
               outcome_variable = parameters[['outcome']] #Set Outcome Var
 
               predictions <- predict(temp_drop_var_declared_model, newdata = test_data) #Get Base Predictions from Dropped Var Model
-              comparison_set <- data.frame(parameters$test_set, check.names = F)[outcome_variable][,1] #Set Real Data
-
-              if (parameters[['outcome_type']] == 'Binomial'){
-                accuracy <- mean(predictions == comparison_set) #Get Predictive Accuracy from Predictions v. Real Data if Binomial DV
-              } else {
-                accuracy <- sqrt(mean((predictions - comparison_set)^2)) #Get Root Mean Squared Error from Predictions v. Real Data if Continuous DV
-              }
-
 
               bootstrap_output <- list() #Create Empty List to Store Bootstrap Outputs
 
@@ -715,10 +708,12 @@ pai <- function(data, #Data
                 bootstrap_predictions <- predict(output$declared_model, newdata = bootstrap_test_data) #Predict on bootstrap Sample
 
                 if (parameters[['outcome_type']] == 'Binomial'){
+                  bootstrap_predictions <- as.numeric(as.character(bootstrap_predictions))
+                  predictions <- as.numeric(as.character(predictions))
                   bootstrap_accuracy <- mean(bootstrap_predictions - predictions) #Calculate Accuracy if Binomial
 
                 } else {
-                  bootstrap_accuracy <- mean(bootstrap_predictions - predictions) #Get Root Mean Squared Error from Predictions v. Real Data if Continuous DV
+                  bootstrap_accuracy <- sqrt(mean((bootstrap_predictions - predictions)^2)) #Get Root Mean Squared Error from Predictions v. Real Data if Continuous DV
                 }
 
 
