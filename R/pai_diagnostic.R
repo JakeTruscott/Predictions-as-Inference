@@ -243,10 +243,20 @@ pai_diagnostic_retrieval <- function(output,
     summary_diagnostics <- list()
 
     summary_diagnostics[['Performance Metrics']] <- data.frame(output$declared_model$results)
-    importance <- varImp(output$declared_model)
-    importance <- as.data.frame(importance$importance[1])
-    names(importance) <- 'Importance'
-    summary_diagnostics[['Variable Importance']] <- importance
+
+
+    importance <- tryCatch({
+      varImp(output$declared_model)
+    }, error = function(e) {
+      NULL  # Return NULL if there's an error
+    })
+
+    # Check if importance was successfully retrieved
+    if (!is.null(importance)) {
+      importance <- as.data.frame(importance$importance[1])
+      names(importance) <- 'Importance'
+      summary_diagnostics[['Variable Importance']] <- importance
+    }
 
     predictions <- predict(output$declared_model, newdata = output$parameters$test_set)
 

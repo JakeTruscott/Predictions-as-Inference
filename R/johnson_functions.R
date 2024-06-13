@@ -11,8 +11,8 @@ library(rlist)
 library(randomForestExplainer)
 numCores <- detectCores()
 
-#seed = 254
-seed = 1234
+seed = 254
+#seed = 1234
 
 '%!in%' <- function(x,y)!('%in%'(x,y))
 
@@ -70,7 +70,6 @@ oosacc <- function(mod, Z, y){
   preds <- predict(mod, Z)
   return(length(which(trues==preds))/length(preds))
 }
-
 
 monocheck <- function(r){
   if (length(unique(r))==1) return(1) # prediction insensitive to mood
@@ -223,6 +222,9 @@ permute.test <- function(mod, test, samps=200, s=seed){
                 upper = apply(pred.df, 2, function(x) quantile(x, .95))/l)
   return(olist)
 }
+
+
+data.frame(upper = olist$upper)
 
 
 ## function to run/save random forest models for justice
@@ -410,13 +412,6 @@ oos.predict <- function(dat, mod, y='direction'){
   return(l/length(p))
 }
 
-
-test_data <- data.frame(js_test$parameters$test_set, check.names = F)
-
-p <- predict(model_254, test_data)
-l <- length(which(p == test_data$direction))
-
-l/length(p)
 
 runjustice <- function(j){
   tic()
