@@ -6,10 +6,58 @@ library(caret); library(dplyr); library(stringr); library(doParallel); library(b
 perms <- readRDS("C:/Users/Jake Truscott/OneDrive - purdue.edu/Active Research/SJT_R_Package/JS_Book_Replication/perms.rds")
 
 load("E:/Strother_Johnson/data/Chapter3-Models-BIG/permutation-dfs.RData")
-p <- perms[[31]]
+p <- perms[[31]] # Cases w/ Issue Mood
 
-js <- p[[3]]
+
+#js <- p[[3]]
+js <- p[[1]]
 js <- data.frame(js)
+
+sparse_values_check <- function(data){
+  sparse_values_list <- list()
+
+  for (var in names(data)){
+
+    if (!is.factor(data[[var]])){
+      next
+    }
+
+    freq_table <- table(data[[var]])
+    rare_values <- names(freq_table[freq_table < 30])
+
+    if (length(rare_values) > 0){
+      sparse_values_list[[var]] <- rare_values
+    }
+
+  }
+
+  return(sparse_values_list)
+
+}
+
+rare_values <- sparse_values_check(js)
+
+for (var in names(js)) {
+
+  if (!var %in% names(rare_values)) {
+    next
+  }
+
+  values_to_amend <- rare_values[[var]]
+
+  if (is.factor(js[[var]])) {
+
+    js[[var]] <- as.character(js[[var]])  # Convert factor to character
+
+    js[[var]][js[[var]] %in% values_to_amend] <- 888  # Replace values
+
+    js[[var]] <- factor(js[[var]])  # Convert back to factor
+  } else {
+
+    js[[var]][js[[var]] %in% values_to_amend] <- 888 # Replace values in character or numeric vectors
+  }
+}
+
 
 moods <- grep('mood', names(js))
 sals <- unique(c(grep('salience', names(js)), grep('CLR', names(js)), grep('sal.', names(js)), grep('Sal.', names(js))))
@@ -58,7 +106,7 @@ custom_tc = "repeats = 5" #Defaults to Basic TC (3 Repeats Assigned K-Folds etc.
 assign_factors = 5 #Defaults to 3 - Change to Any Number
 list_drop_vars = TRUE #Defaults to FALSE
 seed = 254
-drop_sparse_vars = F
+drop_sparse_vars = T
 
 
 pai <- function(data, #Data
@@ -378,9 +426,7 @@ pai <- function(data, #Data
             parameters[['predictors']]  <- parameters$predictors # Don't Toss Sparse Vars
             parameters[['interactions']] <- parameters$interactions # Don't Toss Sparse Vars
 
-            }
-
-
+          }
 
           if (parameters[['list_drop_vars']] == TRUE){
 
@@ -461,6 +507,15 @@ pai <- function(data, #Data
         }
 
       } #Check If Factor (# or Less Unique Values)
+
+      for (var in 1:ncol(data)){
+        inherit_factor_status <- is.factor(data[[var]])
+
+        if (inherit_factor_status == TRUE){
+          factor_variables <- unique(c(factor_variables, colnames(data)[var]))
+        }
+
+      } # Check Factor Status Inherited from Dataframe
 
       sparse_factors <- c()
 
@@ -1547,7 +1602,7 @@ pai <- function(data, #Data
 for (i in c('xgbTree', 'adaboost')){
 
   cases_run <- pai(data = js,
-                      model = i,
+                      model = 'parRF',
                       outcome = 'direction',
                       predictors = NULL,
                       interactions = NULL,
@@ -1556,34 +1611,16 @@ for (i in c('xgbTree', 'adaboost')){
                       placebo_iterations = 200,
                       list_drop_vars = TRUE,
                       folds = 10,
-                      assign_factors = 3,
+                      assign_factors = 5,
                       drop_sparse_vars = TRUE,
                       custom_tc = 'repeats = 5',
                       seed = 254)
 
-  output_dir <- paste0("E:/PAI/pai_updated_June2024/cases_", i, ".rdata")
+  output_dir <- paste0("E:/PAI/pai_updated_June2024/cases_parRF_updated_issuemood.rdata")
   save(cases_run, file = output_dir)
 
 }
 
-
-js_test_ada <- pai(data = js,
-               model = 'xgbTree',
-               outcome = 'direction',
-               predictors = NULL,
-               interactions = NULL,
-               drop_vars = drop_var_list,
-               cores = 8,
-               placebo_iterations = 200,
-               list_drop_vars = TRUE,
-               folds = 10,
-               assign_factors = 3,
-               drop_sparse_vars = TRUE,
-               custom_tc = 'repeats = 5',
-               seed = 254)
-
-
-save(js_test_ada, file = 'C:/Users/Jake Truscott/Desktop/JS_Test_ada.rdata')
 
 pai_diagnostic_retrieval(cases_run,
                          diagnostic = 'placebo',

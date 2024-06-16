@@ -299,7 +299,8 @@ pai_diagnostic_retrieval <- function(output,
 }
 
 
-pai_diagnostic_retrieval(output = output,
+pai_diagnostic_retrieval(output = js_test_parRF,
                diagnostic = 'placebo',
-               type = 'bootstrap_drop_vars',
+               type = 'all',
                combine_plots = T)
+
