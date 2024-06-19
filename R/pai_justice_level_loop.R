@@ -1,113 +1,21 @@
+# FILENAME:  pai_cluster.R
 
+################################################################################
+# Load Packages
+################################################################################
 
 library(caret); library(dplyr); library(stringr); library(doParallel); library(broom); library(cowplot); library(grid); library(gridExtra); library(doSNOW); library(gridtext); library(patchwork); library(randomForest); library(rlist); library(xgboost); library(ggplot2); library(ggridges)
 
-
-perms <- readRDS("C:/Users/Jake Truscott/OneDrive - purdue.edu/Active Research/SJT_R_Package/JS_Book_Replication/perms.rds")
+################################################################################
+#Load Data
+################################################################################
 
 load("E:/Strother_Johnson/data/Chapter3-Models-BIG/permutation-dfs.RData")
-p <- perms[[31]] # Cases w/ Issue Mood
+perms <- perms[!names(perms) %in% c('NMGorsuch')]
 
-
-#js <- p[[3]]
-js <- p[[1]]
-js <- data.frame(js)
-
-sparse_values_check <- function(data){
-  sparse_values_list <- list()
-
-  for (var in names(data)){
-
-    if (!is.factor(data[[var]])){
-      next
-    }
-
-    freq_table <- table(data[[var]])
-    rare_values <- names(freq_table[freq_table < 30])
-
-    if (length(rare_values) > 0){
-      sparse_values_list[[var]] <- rare_values
-    }
-
-  }
-
-  return(sparse_values_list)
-
-}
-
-rare_values <- sparse_values_check(js)
-
-for (var in names(js)) {
-
-  if (!var %in% names(rare_values)) {
-    next
-  }
-
-  values_to_amend <- rare_values[[var]]
-
-  if (is.factor(js[[var]])) {
-
-    js[[var]] <- as.character(js[[var]])  # Convert factor to character
-
-    js[[var]][js[[var]] %in% values_to_amend] <- 888  # Replace values
-
-    js[[var]] <- factor(js[[var]])  # Convert back to factor
-  } else {
-
-    js[[var]][js[[var]] %in% values_to_amend] <- 888 # Replace values in character or numeric vectors
-  }
-}
-
-
-moods <- grep('mood', names(js))
-sals <- unique(c(grep('salience', names(js)), grep('CLR', names(js)), grep('sal.', names(js)), grep('Sal.', names(js))))
-lc <- grep('lcD', names(js))
-jr <- grep('judRev', names(js))
-lats <- grep('lat', names(js))
-issues <- which(names(js) %in% c('issueArea', "issuecluster", "issueFactor",
-                                 "iA.2", "iA.1", "iA.7", "iA.8", "adminAction", "adminActionState"))
-amicis <- which(names(js) %in% c("amaff", "amrev", 'totam', 'wlf', 'chamber', 'sg', 'aclu'))
-ideo <- which(names(js) %in% c('scmed', 'mqmed', 'mqmean'))
-groups <- list(moods=moods, sals=sals, lc=lc, jr=jr, lats=lats, issues=issues, amicis=amicis, ideo=ideo)
-
-drop_var_list <- list()
-
-for (i in 1:length(groups)){
-
-  temp_group <- groups[[i]]
-  temp_group_name <- names(groups[i])
-
-  temp_group_list <- c()
-
-  for (g in temp_group){
-
-    colname = names(js[g])
-    temp_group_list <- c(temp_group_list, colname)
-  }
-
-  drop_var_list[[as.character(temp_group_name)]] <- temp_group_list
-
-}
-
-rm(list=setdiff(ls(), c('js', 'drop_var_list')))
-
-
-data = js #Data
-model = 'parF' #Caret Model
-outcome = 'direction' #DV
-predictors = NULL #IVs
-interactions = NULL #Interactive Terms
-drop_vars = drop_var_list #Defaults to All
-cores = 8 #Defaults to 1
-placebo_iterations = 200 #Defaults to 10
-folds = 10 #Defaults to 5
-train_split = 0.8 #Defaults to 80/20
-custom_tc = "repeats = 5" #Defaults to Basic TC (3 Repeats Assigned K-Folds etc.)
-assign_factors = 5 #Defaults to 3 - Change to Any Number
-list_drop_vars = TRUE #Defaults to FALSE
-seed = 254
-drop_sparse_vars = T
-
+################################################################################
+# PAI Function
+################################################################################
 
 pai <- function(data, #Data
                 model = NULL, #Caret Model
@@ -586,11 +494,11 @@ pai <- function(data, #Data
     declared_model <- function(parameters){
 
       declared_model <- suppressMessages(suppressWarnings(caret::train(form = as.formula(parameters$base_formula),
-                                                                       data = data.frame(parameters$train_set, check.names = F),
-                                                                       metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
-                                                                       method = as.character(parameters$model),
-                                                                       trControl = parameters$train_control,
-                                                                       localImp = TRUE)))
+                                     data = data.frame(parameters$train_set, check.names = F),
+                                     metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
+                                     method = as.character(parameters$model),
+                                     trControl = parameters$train_control,
+                                     localImp = TRUE)))
 
       return(declared_model)
 
@@ -800,7 +708,6 @@ pai <- function(data, #Data
 
       fit_change <- data.frame() #Initialize Empty DF to Store Fit Changes from Dropping Vars
       bootstrap_drop_var <- list() #Initialize Empty List to Store Bootstrap Output
-      omitting_variables_models_output <- list()
 
       vars_to_drop <- c() #Initialize Empty Object for Vars to Drop (Based on Params Declaration)
 
@@ -910,8 +817,6 @@ pai <- function(data, #Data
             )
           }))  #Re-Run Model w/ Omitted Variable
 
-          omitting_variables_models_output[[as.character(temp_dropped_var)]] <- temp_drop_var_declared_model
-
           test_data <- data.frame(parameters$test_set, check.names = F)
 
           if (parameters$outcome_type == 'Binomial'){
@@ -1000,8 +905,7 @@ pai <- function(data, #Data
 
 
       omitting_vars <- list(fit_change = fit_change,
-                            bootstrap_drop_var = bootstrap_drop_var,
-                            omitting_variables_models_output = omitting_variables_models_output)
+                            bootstrap_drop_var = bootstrap_drop_var)
 
       return(omitting_vars)
 
@@ -1030,9 +934,8 @@ pai <- function(data, #Data
         is_factor = TRUE # Default is_factor = T
 
         tryCatch({
-          temp_min = min(data[,temp_var])
-          temp_max = max(data[,temp_var])
-          steps <- seq(temp_min, temp_max, by = (temp_max-temp_min)/100) # Steps = Min -> Max by Distance/100
+          sd_var <- sd(data[, temp_var])
+          steps <- seq(-2 * sd_var, 2 * sd_var, (4 * sd_var) / 100)
           is_factor = FALSE #Test to see if not actually factor/categorical distribution
         }, error = function(e){
           is_factor = TRUE # If it is Factor, Keep it True
@@ -1094,6 +997,8 @@ pai <- function(data, #Data
         return(c(onecount, acc))
       }
 
+      preds <- predict(mod, Z)
+      return(length(which(trues==preds))/length(preds))
 
 
     } #Predictive Accuracy from Steps
@@ -1348,10 +1253,10 @@ pai <- function(data, #Data
             temp_dat <- push_output[[var]] # Grab Temp Var
 
             if (var %in% c(unlist(output$parameters$factors))) {
-              base_plot <- ggplot(data = temp_dat, aes(x = factor(step), y = onecount)) +
+              base_plot <- ggplot(data = temp_dat, aes(x = factor(step), y = acc)) +
                 geom_point() # Generate Base Plot
             } else {
-              base_plot <- ggplot(data = temp_dat, aes(x = step, y = onecount)) +
+              base_plot <- ggplot(data = temp_dat, aes(x = step, y = acc)) +
                 geom_point() # Generate Base Plot
             } # Create Base Plot (Assign x as Factor if in Parameters$factors)
 
@@ -1381,7 +1286,7 @@ pai <- function(data, #Data
             base_plot <- base_plot +
               theme_minimal() +
               labs(x = '\nStep\n',
-                   y = '\nOneCount\n') +
+                   y = '\nAccuracy\n') +
               theme(
                 panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
                 axis.text = element_text(size = 12, colour = 'black'),
@@ -1569,7 +1474,6 @@ pai <- function(data, #Data
   omitting_variables <- dropping_vars(parameters, output) #Run Omitting Vars
   output[['omitting_variables']] <- omitting_variables$fit_change #Append to Output
   output[['omitting_variables_bootstrap']] <- omitting_variables$bootstrap_drop_var
-  output[['omitting_variables_models_output']] <- omitting_variables$omitting_variables_models_output
 
   fit_change <- left_join(placebo$placebo_summary, omitting_variables$fit_change, by = 'var') #Create Fit Change Frame
   output[['fit_change']] <- fit_change #Append to Output
@@ -1601,36 +1505,180 @@ pai <- function(data, #Data
 } #Predictions as Inference Main Function
 
 
-#load('C:/Users/Jake Truscott/Desktop/JS_Test.rdata')
+################################################################################
+# Cycle Through Justices
+################################################################################
 
-for (i in c('xgbTree', 'adaboost')){
+for (justice in 1:length(perms)){
+  temp_justice <- names(perms[justice]) # Get Temp Justice
 
-  cases_run <- pai(data = js,
-                      model = 'parRF',
-                      outcome = 'direction',
-                      predictors = NULL,
-                      interactions = NULL,
-                      drop_vars = drop_var_list,
-                      cores = 10,
-                      placebo_iterations = 200,
-                      list_drop_vars = TRUE,
-                      folds = 10,
-                      assign_factors = 5,
-                      drop_sparse_vars = TRUE,
-                      custom_tc = 'repeats = 5',
-                      seed = 254)
+  message(' ------------- ', 'Beginning ', temp_justice, ' ------------- ')
 
-  output_dir <- paste0("E:/PAI/pai_updated_June2024/cases_parRF_updated_issuemood.rdata")
-  save(cases_run, file = output_dir)
+  justice_output_dir <- paste0("E:/PAI/pai_updated_June2024/", temp_justice) # Create Justice-Level Index Output Dir
+
+  if (!file.exists(justice_output_dir)){
+    dir.create(justice_output_dir)
+  } # If Justice-Level Index Output Dir Does Not Exist - Create It
+
+  temp_justice_data <- perms[[temp_justice]] # Retrieve Justice-Level Data
+  temp_justice_dataframe <- temp_justice_data[[1]] # Retrievei IssueMood Data
+
+  {
+
+
+    sparse_values_check <- function(data){
+      sparse_values_list <- list()
+
+      for (var in names(data)){
+
+        if (!is.factor(data[[var]])){
+          next
+        }
+
+        freq_table <- table(data[[var]])
+        rare_values <- names(freq_table[freq_table < 30])
+
+        if (length(rare_values) > 0){
+          sparse_values_list[[var]] <- rare_values
+        }
+
+      }
+
+      return(sparse_values_list)
+
+    }
+
+    rare_values <- sparse_values_check(temp_justice_dataframe)
+
+    for (var in names(temp_justice_dataframe)) {
+
+      if (!var %in% names(rare_values)) {
+        next
+      }
+
+      values_to_amend <- rare_values[[var]]
+
+      if (is.factor(temp_justice_dataframe[[var]])) {
+
+        temp_justice_dataframe[[var]] <- as.character(temp_justice_dataframe[[var]])  # Convert factor to character
+
+        temp_justice_dataframe[[var]][temp_justice_dataframe[[var]] %in% values_to_amend] <- 888  # Replace values
+
+        temp_justice_dataframe[[var]] <- factor(temp_justice_dataframe[[var]])  # Convert back to factor
+      } else {
+
+        temp_justice_dataframe[[var]][temp_justice_dataframe[[var]] %in% values_to_amend] <- 888 # Replace values in character or numeric vectors
+      }
+    }
+
+  } #Sparse Variables Check & Fix
+
+  {
+
+    moods <- grep('mood', names(temp_justice_dataframe))
+    sals <- unique(c(grep('salience', names(temp_justice_dataframe)), grep('CLR', names(temp_justice_dataframe)), grep('sal.', names(temp_justice_dataframe)), grep('Sal.', names(temp_justice_dataframe))))
+    lc <- grep('lcD', names(temp_justice_dataframe))
+    jr <- grep('judRev', names(temp_justice_dataframe))
+    lats <- grep('lat', names(temp_justice_dataframe))
+    issues <- which(names(temp_justice_dataframe) %in% c('issueArea', "issuecluster", "issueFactor",
+                                                         "iA.2", "iA.1", "iA.7", "iA.8", "adminAction", "adminActionState"))
+    amicis <- which(names(temp_justice_dataframe) %in% c("amaff", "amrev", 'totam', 'wlf', 'chamber', 'sg', 'aclu'))
+    ideo <- which(names(temp_justice_dataframe) %in% c('scmed', 'mqmed', 'mqmean'))
+    groups <- list(moods=moods, sals=sals, lc=lc, jr=jr, lats=lats, issues=issues, amicis=amicis, ideo=ideo)
+
+    drop_var_list <- list()
+
+    for (i in 1:length(groups)){
+
+      temp_group <- groups[[i]]
+      temp_group_name <- names(groups[i])
+
+      temp_group_list <- c()
+
+      for (g in temp_group){
+
+        colname = names(temp_justice_dataframe[g])
+        temp_group_list <- c(temp_group_list, colname)
+      }
+
+      drop_var_list[[as.character(temp_group_name)]] <- temp_group_list
+
+    }
+
+  } # Produce drop_var_groups
+
+  for (model in c('adaboost'))
+
+    model_level_output <- paste0(justice_output_dir, '/', model, '_issueMood') # Justice-Model-Level Directory
+
+  if (!file.exists(model_level_output)){
+    dir.create(model_level_output)
+  } # Justice-Model-Level Directory
+
+  model_complete_output_dir <- paste0(model_level_output, '/', temp_justice, '_', model, '_issueMood.rdata') # Model Complete Output Dir
+
+  if (file.exists(model_complete_output_dir)){
+    next
+  } # If Model Already Exists - Move On
+
+  temp_run <- pai(data = temp_justice_dataframe,
+                  model = model,
+                  outcome = 'direction',
+                  predictors = NULL,
+                  interactions = NULL,
+                  drop_vars = drop_var_list,
+                  cores = 10,
+                  placebo_iterations = 200,
+                  list_drop_vars = TRUE,
+                  folds = 10,
+                  assign_factors = 3,
+                  drop_sparse_vars = TRUE,
+                  custom_tc = 'repeats = 5',
+                  seed = 254)
+
+  save(temp_run, file = model_complete_output_dir)
 
 }
 
 
-pai_diagnostic_retrieval(cases_run,
-                         diagnostic = 'placebo',
-                         type = 'all')
+
+diagnostics_directory <- list.files("E:/PAI/pai_updated_June2024/", full.names = T)
+
+for (i in 1:length(diagnostics_directory)){
+
+  temp_justice <- gsub("E:/PAI/pai_updated_June2024/", '', diagnostics_directory[i])
+  message('Beginning ', temp_justice)
+
+  issuemood_dir <- paste0(diagnostics_directory[i], '/nnet_issueMood')
+  temp_run <- get(load(list.files(issuemood_dir[1], full.names = T, pattern = '.rdata')))
+
+  diagnostics_output_directory <- paste0(issuemood_dir, '/Diagnostics')
+
+  if (!file.exists(diagnostics_output_directory)){
+    dir.create(diagnostics_output_directory)
+  }
+
+  placebo_single <- pai_diagnostic_retrieval(output = temp_run,
+                                             diagnostic = 'placebo',
+                                             type = 'figure')
+
+  placebo_combined <- pai_diagnostic_retrieval(output = temp_run,
+                                               diagnostic = 'placebo',
+                                               type = 'all')
+
+  bootstraps <- pai_diagnostic_retrieval(output = temp_run,
+                                        diagnostic = 'bootstrap',
+                                        type = 'distribution')
 
 
-pai_diagnostic_retrieval(output = js_test_parRF,
-                         diagnostic = 'summary')
+  summary <- pai_diagnostic_retrieval(output = temp_run,
+                                      diagnostic = 'summary')
+
+  ggsave(placebo_single, file = paste0(diagnostics_output_directory, '/placebo_single.png'))
+  ggsave(placebo_combined, file = paste0(diagnostics_output_directory, '/placebo_combined.png'))
+  ggsave(bootstraps, file = paste0(diagnostics_output_directory, '/bootstraps.png'))
+  save(summary, file = paste0(diagnostics_output_directory, '/summary.rdata'))
+
+  }
+
 

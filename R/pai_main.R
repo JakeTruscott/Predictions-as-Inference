@@ -343,8 +343,6 @@ pai <- function(data, #Data
 
           }
 
-
-
           if (parameters[['list_drop_vars']] == TRUE){
 
             for (list in 1:length(parameters[['drop_vars']])){
@@ -425,6 +423,15 @@ pai <- function(data, #Data
 
       } #Check If Factor (# or Less Unique Values)
 
+      for (var in 1:ncol(data)){
+        inherit_factor_status <- is.factor(data[[var]])
+
+        if (inherit_factor_status == TRUE){
+          factor_variables <- unique(c(factor_variables, colnames(data)[var]))
+        }
+
+      } # Check Factor Status Inherited from Dataframe
+
       sparse_factors <- c()
 
       for (factor in factor_variables){
@@ -493,12 +500,12 @@ pai <- function(data, #Data
 
     declared_model <- function(parameters){
 
-      declared_model <- caret::train(form = as.formula(parameters$base_formula),
-                                     data = data.frame(parameters$train_set, check.names = F),
-                                     metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
-                                     method = as.character(parameters$model),
-                                     trControl = parameters$train_control,
-                                     localImp = TRUE)
+      declared_model <- suppressMessages(suppressWarnings(caret::train(form = as.formula(parameters$base_formula),
+                                                                       data = data.frame(parameters$train_set, check.names = F),
+                                                                       metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
+                                                                       method = as.character(parameters$model),
+                                                                       trControl = parameters$train_control,
+                                                                       localImp = TRUE)))
 
       return(declared_model)
 
@@ -708,6 +715,7 @@ pai <- function(data, #Data
 
       fit_change <- data.frame() #Initialize Empty DF to Store Fit Changes from Dropping Vars
       bootstrap_drop_var <- list() #Initialize Empty List to Store Bootstrap Output
+      omitting_variables_models_output <- list()
 
       vars_to_drop <- c() #Initialize Empty Object for Vars to Drop (Based on Params Declaration)
 
@@ -817,6 +825,8 @@ pai <- function(data, #Data
             )
           }))  #Re-Run Model w/ Omitted Variable
 
+          omitting_variables_models_output[[as.character(temp_dropped_var)]] <- temp_drop_var_declared_model
+
           test_data <- data.frame(parameters$test_set, check.names = F)
 
           if (parameters$outcome_type == 'Binomial'){
@@ -905,7 +915,8 @@ pai <- function(data, #Data
 
 
       omitting_vars <- list(fit_change = fit_change,
-                            bootstrap_drop_var = bootstrap_drop_var)
+                            bootstrap_drop_var = bootstrap_drop_var,
+                            omitting_variables_models_output = omitting_variables_models_output)
 
       return(omitting_vars)
 
@@ -934,8 +945,9 @@ pai <- function(data, #Data
         is_factor = TRUE # Default is_factor = T
 
         tryCatch({
-          sd_var <- sd(data[, temp_var])
-          steps <- seq(-2 * sd_var, 2 * sd_var, (4 * sd_var) / 100)
+          temp_min = min(data[,temp_var])
+          temp_max = max(data[,temp_var])
+          steps <- seq(temp_min, temp_max, by = (temp_max-temp_min)/100) # Steps = Min -> Max by Distance/100
           is_factor = FALSE #Test to see if not actually factor/categorical distribution
         }, error = function(e){
           is_factor = TRUE # If it is Factor, Keep it True
@@ -997,8 +1009,6 @@ pai <- function(data, #Data
         return(c(onecount, acc))
       }
 
-      preds <- predict(mod, Z)
-      return(length(which(trues==preds))/length(preds))
 
 
     } #Predictive Accuracy from Steps
@@ -1253,10 +1263,10 @@ pai <- function(data, #Data
             temp_dat <- push_output[[var]] # Grab Temp Var
 
             if (var %in% c(unlist(output$parameters$factors))) {
-              base_plot <- ggplot(data = temp_dat, aes(x = factor(step), y = acc)) +
+              base_plot <- ggplot(data = temp_dat, aes(x = factor(step), y = onecount)) +
                 geom_point() # Generate Base Plot
             } else {
-              base_plot <- ggplot(data = temp_dat, aes(x = step, y = acc)) +
+              base_plot <- ggplot(data = temp_dat, aes(x = step, y = onecount)) +
                 geom_point() # Generate Base Plot
             } # Create Base Plot (Assign x as Factor if in Parameters$factors)
 
@@ -1286,7 +1296,7 @@ pai <- function(data, #Data
             base_plot <- base_plot +
               theme_minimal() +
               labs(x = '\nStep\n',
-                   y = '\nAccuracy\n') +
+                   y = '\nOneCount\n') +
               theme(
                 panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
                 axis.text = element_text(size = 12, colour = 'black'),
@@ -1474,6 +1484,7 @@ pai <- function(data, #Data
   omitting_variables <- dropping_vars(parameters, output) #Run Omitting Vars
   output[['omitting_variables']] <- omitting_variables$fit_change #Append to Output
   output[['omitting_variables_bootstrap']] <- omitting_variables$bootstrap_drop_var
+  output[['omitting_variables_models_output']] <- omitting_variables$omitting_variables_models_output
 
   fit_change <- left_join(placebo$placebo_summary, omitting_variables$fit_change, by = 'var') #Create Fit Change Frame
   output[['fit_change']] <- fit_change #Append to Output
