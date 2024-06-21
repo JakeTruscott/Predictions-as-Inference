@@ -300,16 +300,3 @@ pai_diagnostic_retrieval <- function(output,
 
 
 
-library(dplyr); library(stringr); library(broom); library(cowplot); library(grid); library(gridExtra); library(gridtext); library(patchwork); library(ggplot2); library(ggridges) #Libraries Needed
-
-
-pai_diagnostic_retrieval(output = temp_run,
-                         diagnostic = 'push',
-                         type = 'figure',
-                         variables = 'issuemood') # Sample w/ issueMood Variable
-
-pai_diagnostic_retrieval(output = temp_run,
-                         diagnostic = 'push',
-                         type = 'figure',
-                         combine_plots = T) # Sample Code to Plot All w/ cowplot
-
