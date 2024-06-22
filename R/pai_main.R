@@ -30,11 +30,13 @@ pai <- function(data, #Data
                 predictors = NULL, #IVs
                 interactions = NULL, #Interactive Terms
                 drop_vars = NULL, #Defaults to All
+                save_drop_var_models = FALSE, # Defaults to FALSE
                 cores = NULL, #Defaults to 1
                 placebo_iterations = NULL, #Defaults to 10
                 folds = NULL, #Defaults to 5
                 train_split = 0.8, #Defaults to 80/20
                 drop_sparse_vars = TRUE,
+                sparse_variable_threshold = NULL, # Total Number of Observations Required For Factor Value[x] (If Below Threshold, Will Default to 888)
                 custom_tc = FALSE, #Defaults to Basic TC (3 Repeats, Assigned K-Folds, etc.)
                 assign_factors = 3, #Defaults to 3 - Change to Any Number
                 list_drop_vars = FALSE, #Defaults to FALSE
@@ -126,6 +128,14 @@ pai <- function(data, #Data
           parameters[['drop_sparse_vars']] <- TRUE
         }
 
+        parameters[['save_drop_var_models']] <- save_drop_var_models # Save Drop Var Models (True/False -- Defaults to FALSE)
+
+        if (is.null(sparse_variable_threshold)){
+          parameters[['sparse_variable_threshold']] <- NULL
+        } else {
+          parameters[['sparse_variable_threshold']] <- sparse_variable_threshold
+        }
+
         parameters[['list_drop_vars']] <- list_drop_vars
 
         if (list_drop_vars == FALSE){
@@ -134,12 +144,12 @@ pai <- function(data, #Data
           parameters[['drop_vars']] <- drop_vars
         } #Drop Vars - List vs. Identified
 
-
         if (seed == 1234){
           parameters[['seed']] <- 1234
         } else {
           parameters[['seed']] <- as.numeric(seed)
         } #Seed
+
 
       } #Parameter Declaration
 
@@ -217,6 +227,61 @@ pai <- function(data, #Data
           full_data <-  data %>%
             select(parameters$outcome, any_of(unlist(combined_vars))) #Get Full Data
 
+          {
+
+            if (is.null(parameters$sparse_variable_threshold)){
+              full_data <- full_data
+            } else {
+
+              sparse_values_check <- function(data){
+                sparse_values_list <- list()
+
+                for (var in names(data)){
+
+                  if (!is.factor(data[[var]])){
+                    next
+                  }
+
+                  freq_table <- table(data[[var]])
+                  rare_values <- names(freq_table[freq_table < 50])
+
+                  if (length(rare_values) > 0){
+                    sparse_values_list[[var]] <- rare_values
+                  }
+
+                }
+
+                return(sparse_values_list)
+
+              } # Function to Check Sparse Factor Variables & Fix
+              rare_values <- sparse_values_check(full_data) # Plug Full Data
+              for (var in names(full_data)) {
+
+                if (!var %in% names(rare_values)) {
+                  next
+                }
+
+                values_to_amend <- rare_values[[var]]
+
+                if (is.factor(full_data[[var]])) {
+
+                  full_data[[var]] <- as.character(full_data[[var]])  # Convert factor to character
+
+                  full_data[[var]][full_data[[var]] %in% values_to_amend] <- 888  # Replace values
+
+                  full_data[[var]] <- factor(full_data[[var]])  # Convert back to factor
+                } else {
+
+                  full_data[[var]][full_data[[var]] %in% values_to_amend] <- 888 # Replace values in character or numeric vectors
+                }
+              } # Fix Sparse Factors -- Replace with '888'
+
+            }
+
+
+
+            } # Sparse Variable Threshold
+
           if (!is.null(parameters$interactions)){
             for (interaction in unlist(parameters$interactions)){
               temp_term <- interaction
@@ -228,7 +293,7 @@ pai <- function(data, #Data
 
           parameters['full_data'] <- list(full_data)
 
-        } #Create 'full_data'
+        } #Create 'full_data' (Fix Sparse Factors if Threshold !is.null())
 
         {
 
@@ -386,6 +451,12 @@ pai <- function(data, #Data
 
         } #Create Formula (+ Message for What Was Tossed b/c Sparse)
 
+        {
+
+          parameters$test_set = data.frame(parameters$test_set, check.names = F)
+          parameters$train_set = data.frame(parameters$train_set, check.names = F)
+
+        } # Final Fix/Setting of Test/Train Data
 
       } #Create Data, Test/Train Split & Formula -- Remove Sparse Vars
 
@@ -501,7 +572,7 @@ pai <- function(data, #Data
     declared_model <- function(parameters){
 
       declared_model <- suppressMessages(suppressWarnings(caret::train(form = as.formula(parameters$base_formula),
-                                                                       data = data.frame(parameters$train_set, check.names = F),
+                                                                       data = parameters$train_set,
                                                                        metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
                                                                        method = as.character(parameters$model),
                                                                        trControl = parameters$train_control,
@@ -521,14 +592,14 @@ pai <- function(data, #Data
         variables <- c(unlist(parameters$predictors), unlist(parameters$interactions))
       }  # Get Variables
 
-      true_values <- data.frame(parameters$test_set, check.names = F)[parameters$outcome][,1] #Set Real Data
-      test_data <- data.frame(parameters$test_set, check.names = F)
+      true_values <- parameters$test_set[parameters$outcome][,1] #Set Real Data
+      test_data <- parameters$test_set
 
       if (parameters$outcome_type == 'Binomial'){
-        original_predictions <- predict(output$declared_model, data.frame(parameters$test_set, check.names = F), na.action = na.pass)
+        original_predictions <- predict(output$declared_model, parameters$test_set, na.action = na.pass)
         original_accuracy = length(which(original_predictions==test_data[[parameters$outcome]]))/length(original_predictions)
       } else {
-        original_predictions <- predict(output$declared_model, data.frame(parameters$test_set, check.names = F), na.action = na.pass)
+        original_predictions <- predict(output$declared_model, parameters$test_set, na.action = na.pass)
         original_accuracy <- sqrt(mean((original_predictions - test_data[[parameters$outcome]])^2)) # If DV is Continuous...
       }
 
@@ -545,7 +616,7 @@ pai <- function(data, #Data
 
           for (drop_group in 1:length(variables)){
 
-            shuffle_data <- data.frame(parameters$test_set, check.names = F) #Get Test Data
+            shuffle_data <- parameters$test_set #Get Test Data
 
             temp_drop_group <- unlist(unname(variables[drop_group]))
 
@@ -584,7 +655,7 @@ pai <- function(data, #Data
 
           for (var in variables){
 
-            shuffle_data <- data.frame(parameters$test_set, check.names = F) #Get Test Data
+            shuffle_data <- parameters$test_set #Get Test Data
 
             vars_to_shuffle <- c(var, unlist(stringr::str_split(var, pattern = '(\\*|\\:)'))) #Get All Vars (Including Interactions w/ Vars)
             vars_to_shuffle <- vars_to_shuffle[!grepl('(\\*|\\:)', vars_to_shuffle)] #Shuffle Stand-Alone Vars -- Recompile Interactions
@@ -715,8 +786,7 @@ pai <- function(data, #Data
 
       fit_change <- data.frame() #Initialize Empty DF to Store Fit Changes from Dropping Vars
       bootstrap_drop_var <- list() #Initialize Empty List to Store Bootstrap Output
-      omitting_variables_models_output <- list()
-
+      omitting_variables_models_output <- list() # Initialize Empty List to Store Drop Var Model Outputs (Will Store if Param = TRUE)
       vars_to_drop <- c() #Initialize Empty Object for Vars to Drop (Based on Params Declaration)
 
       if (parameters$list_drop_vars == 'FALSE'){
@@ -817,7 +887,7 @@ pai <- function(data, #Data
           suppressWarnings(suppress_message({
             temp_drop_var_declared_model <- train(
               form = as.formula(temp_combination_row$temp_combination),
-              data = data.frame(parameters$train_set, check.names = F),
+              data = parameters$train_set,
               metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
               method = as.character(parameters$model),
               trControl = parameters$train_control,
@@ -825,9 +895,11 @@ pai <- function(data, #Data
             )
           }))  #Re-Run Model w/ Omitted Variable
 
-          omitting_variables_models_output[[as.character(temp_dropped_var)]] <- temp_drop_var_declared_model
+          if (parameters$save_drop_var_models == TRUE){
+            omitting_variables_models_output[[as.character(temp_dropped_var)]] <- temp_drop_var_declared_model
+          } # If save_drop_var_models == TRUE ~ Store Output to omitting_variables_model_output
 
-          test_data <- data.frame(parameters$test_set, check.names = F)
+          test_data <- parameters$test_set
 
           if (parameters$outcome_type == 'Binomial'){
             original_predictions <- predict(output$declared_model, test_data, na.action = na.pass)
@@ -871,7 +943,7 @@ pai <- function(data, #Data
             outcome_variable = parameters[['outcome']] #Set Outcome Var
 
             predictions <- predict(temp_drop_var_declared_model, newdata = test_data) #Get Base Predictions from Dropped Var Model
-            comparison_set <- data.frame(parameters$test_set, check.names = F)[outcome_variable][,1] #Set Real Data
+            comparison_set <- parameters$test_set[outcome_variable][,1] #Set Real Data
 
             if (parameters[['outcome_type']] == 'Binomial'){
               accuracy <- mean(predictions == comparison_set) #Get Predictive Accuracy from Predictions v. Real Data if Binomial DV
@@ -913,10 +985,16 @@ pai <- function(data, #Data
         }
       } #Assess Fit Change from Omitting Vars (If List Drop Vars)
 
+      if (parameters$save_drop_var_models == TRUE){
+        omitting_vars <- list(fit_change = fit_change,
+                              bootstrap_drop_var = bootstrap_drop_var,
+                              omitting_variables_models_output = omitting_variables_models_output)
+      } else {
+        omitting_vars <- list(fit_change = fit_change,
+                              bootstrap_drop_var = bootstrap_drop_var)
+      } # If save_drop_var_models == TRUE - Return Model Outputs (If FALSE - Don't)
 
-      omitting_vars <- list(fit_change = fit_change,
-                            bootstrap_drop_var = bootstrap_drop_var,
-                            omitting_variables_models_output = omitting_variables_models_output)
+
 
       return(omitting_vars)
 
@@ -938,7 +1016,7 @@ pai <- function(data, #Data
 
       for (variable in 1:length(variables)){
         temp_var = variables[variable] #Get Var
-        data = data.frame(parameters$test_set, check.names = F) #Get Data (Test Data)
+        data = parameters$test_set #Get Data (Test Data)
         temp_var_distribution = unique(data[,temp_var]) #Get Distribution of Temp Var
 
         factor_vars <- output$parameters$factors
@@ -997,8 +1075,8 @@ pai <- function(data, #Data
         Z[[var]] <- Z[[var]]  + stepper
         pred <- predict(mod, Z)
         true <- Z[[outcome_var]]
-        dif <- pred - true
-        return(dif)
+        diff <- pred - true
+        return(diff)
       } else {
 
         Z[[var]] <- Z[[var]]  + stepper
@@ -1008,8 +1086,6 @@ pai <- function(data, #Data
         acc <- length(which(pred==true))/length(true)
         return(c(onecount, acc))
       }
-
-
 
     } #Predictive Accuracy from Steps
 
@@ -1023,7 +1099,7 @@ pai <- function(data, #Data
 
     bootstrap_predictions_ci <- function(output, parameters){
 
-      test_data = data.frame(parameters$test_set, check.names = F) #Grab Test Data
+      test_data = parameters$test_set #Grab Test Data
 
       for (var in 1:ncol(test_data)){
         temp_column <- data.frame(test_data[,var])
@@ -1041,7 +1117,7 @@ pai <- function(data, #Data
       outcome_variable = parameters[['outcome']] #Set Outcome Var
 
       original_predictions <- predict(output$declared_model, newdata = test_data) #Get Base Predictions
-      comparison_set <- data.frame(parameters$test_set, check.names = F)[outcome_variable][,1] #Set Real Data
+      comparison_set <- parameters$test_set[outcome_variable][,1] #Set Real Data
 
       if (parameters[['outcome_type']] == 'Binomial'){
         accuracy = length(which(original_predictions==test_data[[parameters$outcome]]))/length(original_predictions) #Get Predictive Accuracy from Predictions v. Real Data if Binomial DV
@@ -1053,7 +1129,7 @@ pai <- function(data, #Data
       bootstrap_output <- list() #Create Empty List to Store Bootstrap Outputs
 
       for (i in 1:100) {
-        bootstrap_indices <- sample(1/5*nrow(test_data), replace = TRUE) #Generate Bootstrap Sample
+        bootstrap_indices <- sample(nrow(test_data), replace = TRUE) #Generate Bootstrap Sample
         bootstrap_test_data <- test_data[bootstrap_indices, ] #Subset Test Data by Sample Indeces
         bootstrap_test_data <- bootstrap_test_data[, !names(bootstrap_test_data) == parameters$outcome, drop = FALSE] #Remove DV
         bootstrap_predictions <- predict(output$declared_model, newdata = bootstrap_test_data) #Predict on bootstrap Sample
@@ -1250,7 +1326,7 @@ pai <- function(data, #Data
         linear_vars <- names(output$push)
         parameters <- output$parameters
         push_output <- output$push #Grab Push Output
-        original_test_data <- data.frame(parameters$test_set, check.names = F)
+        original_test_data <- parameters$test_set
 
         diagnostic_push <- list() #Create Empty List for Output
 
@@ -1263,14 +1339,29 @@ pai <- function(data, #Data
             temp_dat <- push_output[[var]] # Grab Temp Var
 
             if (var %in% c(unlist(output$parameters$factors))) {
-              base_plot <- ggplot(data = temp_dat, aes(x = factor(step), y = onecount)) +
-                geom_point() # Generate Base Plot
+
+              if (parameters$outcome_type == 'Binomial'){
+                base_plot <- ggplot(data = temp_dat, aes(x = factor(step), y = onecount)) +
+                  geom_point() # Generate Base Plot
+              } else {
+                base_plot <- ggplot(data = temp_dat, aes(x = factor(step), y = diff)) +
+                  geom_point() # Generate Base Plot
+              }
+
             } else {
-              base_plot <- ggplot(data = temp_dat, aes(x = step, y = onecount)) +
-                geom_point() # Generate Base Plot
+
+              if (parameters$outcome_type == 'Binomial'){
+                base_plot <- ggplot(data = temp_dat, aes(x = step, y = onecount)) +
+                  geom_point() # Generate Base Plot
+              } else {
+                base_plot <- ggplot(data = temp_dat, aes(x = step, y = diff)) +
+                  geom_point() # Generate Base Plot
+              }
+
+
             } # Create Base Plot (Assign x as Factor if in Parameters$factors)
 
-            scott_info <- hist(temp_dat$step, breaks = "scott", plot = FALSE) # Get # Bins from Scot's Normal Reference Rule
+            scott_info <- hist(temp_dat$step, breaks = "scott", plot = FALSE) # Get # Bins from Scott's Normal Reference Rule
             breakpoints <- length(scott_info$breaks)
             temp_dat$bin <- cut_interval(as.numeric(temp_dat$step), n = breakpoints) # Assign Bins
 
@@ -1278,7 +1369,13 @@ pai <- function(data, #Data
               bin_label <- unique(temp_dat$bin)[temp_bin]
               temp_bin_dat <- temp_dat %>%
                 filter(bin == unique(temp_dat$bin)[temp_bin])
-              lm_bin_temp <- lm(acc ~ step, data = temp_bin_dat)
+
+              if (parameters$outcome_type == 'Binomial'){
+                lm_bin_temp <- lm(onecount ~ step, data = temp_bin_dat)
+              } else {
+                lm_bin_temp <- lm(diff ~ step, data = temp_bin_dat)
+              }
+
               suppressWarnings({
                 diagnostic_push[[var]][['linear_fit']][[as.character(bin_label)]] <- broom::tidy(lm_bin_temp) %>%
                   mutate(sig = case_when(
@@ -1289,14 +1386,14 @@ pai <- function(data, #Data
                   ))
 
                 base_plot <- base_plot +
-                  geom_smooth(method = 'lm', formula = y ~ x, data = temp_bin_dat)
+                  geom_smooth(method = 'lm',  data = temp_bin_dat)
               })
             } # Calculate LM by Bins & Append to Base Plot
 
             base_plot <- base_plot +
               theme_minimal() +
               labs(x = '\nStep\n',
-                   y = '\nOneCount\n') +
+                   y = '\nPush Prediction\n') +
               theme(
                 panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
                 axis.text = element_text(size = 12, colour = 'black'),
@@ -1483,8 +1580,9 @@ pai <- function(data, #Data
 
   omitting_variables <- dropping_vars(parameters, output) #Run Omitting Vars
   output[['omitting_variables']] <- omitting_variables$fit_change #Append to Output
-  output[['omitting_variables_bootstrap']] <- omitting_variables$bootstrap_drop_var
-  output[['omitting_variables_models_output']] <- omitting_variables$omitting_variables_models_output
+  if (parameters$save_drop_var_models == TRUE){
+    output[['omitting_variables_bootstrap']] <- omitting_variables$bootstrap_drop_var
+  } # Append to Output if Parameter == TRUE
 
   fit_change <- left_join(placebo$placebo_summary, omitting_variables$fit_change, by = 'var') #Create Fit Change Frame
   output[['fit_change']] <- fit_change #Append to Output
@@ -1515,3 +1613,4 @@ pai <- function(data, #Data
 
 } #Predictions as Inference Main Function
 
+# Updated 6/22/2024

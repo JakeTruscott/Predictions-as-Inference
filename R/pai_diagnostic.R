@@ -22,7 +22,14 @@ pai_diagnostic_retrieval <- function(output,
                                      diagnostic,
                                      type,
                                      variables = NULL,
-                                     combine_plots = FALSE
+                                     combine_plots = FALSE,
+                                     rename_y_title = NULL,
+                                     rename_x_title = NULL,
+                                     rename_x_labels = NULL,
+                                     rename_y_labels = NULL,
+                                     rename_title = NULL,
+                                     rename_subtitle = NULL,
+                                     rename_caption = NULL
 ){
 
   diagnostic_output <- output$diagnostics[[diagnostic]] #diagnostic = 'placebo', 'push', 'bootstrap'
@@ -140,37 +147,6 @@ pai_diagnostic_retrieval <- function(output,
       } # Grab Figure or Fit for Each Var
     }  #If No Variables Declared - Return All
 
-    if (combine_plots == TRUE){
-
-      titles_vector = names(diagnostic_retrieved)
-
-      diagnostic_figure_retrieved <- diagnostic_retrieved
-
-      for (i in 1:length(diagnostic_retrieved)){
-        diagnostic_figure_retrieved[[i]]$labels$x = ''
-        diagnostic_figure_retrieved[[i]]$labels$y = ''
-
-      } #Remove Legends
-
-      for (i in seq_along(diagnostic_figure_retrieved)) {
-        diagnostic_figure_retrieved[[i]] <- arrangeGrob(
-          diagnostic_figure_retrieved[[i]],
-          top = textGrob(titles_vector[i], gp = gpar(fontsize = 14))
-        )
-      } # Add Var-Level Titles
-
-
-      diagnostic_retrieved <- cowplot::plot_grid(plotlist = diagnostic_figure_retrieved,
-                                                 ncol = round(length(variables)/2, 0),
-                                                 scale = 0.9) # Arrange plots on a grid
-
-
-      diagnostic_retrieved <- diagnostic_retrieved +
-        draw_label("Step", x=0.5, y=  0, vjust=-1, angle= 0) +
-        draw_label("Predicted Accuracy", x=  0, y=0.5, vjust= 1, angle=90)
-
-    } #If combine_plots = TRUE, Combine Them to Single Plot and Return Plot (Else, Return List of Figures)
-
 
   } #If Diagnostic is 'Push'
 
@@ -198,41 +174,6 @@ pai_diagnostic_retrieval <- function(output,
         diagnostic_retrieved[[bootstrap_vars[var]]] <- diagnostic_output$variable_figures[[bootstrap_vars[var]]]
 
       } #Collect Figures by Var
-
-      if (combine_plots == TRUE){
-
-        g_legend <- function(a.gplot) {
-          tmp <- ggplot_gtable(ggplot_build(a.gplot))
-          leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
-          legend <- tmp$grobs[[leg]]
-          return(legend)
-        } #Get Legend Function
-
-        legend <- g_legend(diagnostic_retrieved[[1]]) #Get Legend from First Plot
-
-        for (i in 1:length(diagnostic_retrieved)){
-          temp_figure <-  diagnostic_retrieved[[i]] +  guides(shape = 'none', fill = 'none', colour = 'none')
-          diagnostic_retrieved[[i]] <- temp_figure
-        } #Remove Legends
-
-        {
-
-          x_label = diagnostic_retrieved[[1]]$labels$x
-          y_label = diagnostic_retrieved[[1]]$labels$y
-
-        } #Grab Labels
-
-        temp_figure <- cowplot::plot_grid(plotlist = diagnostic_retrieved,
-                                          label_x = x_label,
-                                          label_y = y_label)
-
-        legend_below <- cowplot::plot_grid(NULL, legend, nrow = 2, align = 'v')
-
-        diagnostic_retrieved <- cowplot::plot_grid(temp_figure, legend_below, ncol = 1, rel_heights = c(4, 1))
-
-
-
-      } #If combine_plots = TRUE, Combine Them to Single Plot and Return Plot (Else, Return List of Figures)
 
     } #If Type is Var Figure
 
@@ -291,12 +232,80 @@ pai_diagnostic_retrieval <- function(output,
 
     diagnostic_retrieved <- summary_diagnostics
 
+    return(diagnostic_retrieved)
+
   }
+
+
+  for (i in 1:length(diagnostic_retrieved)){
+
+    temp_diagnostic_plot <- diagnostic_retrieved[[i]]
+
+    {
+
+      if (!is.null(rename_y_labels)){
+        temp_diagnostic_plot <- temp_diagnostic_plot +
+          scale_x_continuous(labels = rename_x_labels)
+      } # Yaxis Labels
+
+      if (!is.null(rename_x_labels)){
+        temp_diagnostic_plot <- temp_diagnostic_plot +
+          scale_x_discrete(labels = rename_x_labels)
+      } # Xaxis Labels
+
+      if (!is.null(rename_y_title)){
+        temp_diagnostic_plot <- temp_diagnostic_plot +
+          labs(y = rename_y_title)
+      } #Yaxis Title
+
+      if (!is.null(rename_x_title)){
+        temp_diagnostic_plot <- temp_diagnostic_plot +
+          labs(rename_x_title)
+      } #Xaxis Title
+
+      if (!is.null(rename_title)){
+        temp_diagnostic_plot <- temp_diagnostic_plot +
+          labs(title = rename_title)
+      } # Main Title
+
+      if (!is.null(rename_subtitle)){
+        temp_diagnostic_plot <- temp_diagnostic_plot +
+          labs(subtitle = rename_subtitle)
+      } # SubTitle
+
+      if (!is.null(rename_caption)){
+        temp_diagnostic_plot <- temp_diagnostic_plot +
+          labs(caption = rename_caption)
+      } # SubTitle
+
+    } # Plot Label Additions/Fixes
+
+    diagnostic_retrieved[[i]] <- temp_diagnostic_plot
+
+  } # Plot Label Additions/Fixtures (only if figure diagnostics)
+
+  if (combine_plots == TRUE){
+
+    titles_vector = names(diagnostic_retrieved)
+
+    diagnostic_figure_retrieved <- diagnostic_retrieved
+
+    diagnostic_retrieved <- cowplot::plot_grid(plotlist = diagnostic_figure_retrieved,
+                                               ncol = round(length(variables)/2, 0),
+                                               scale = 0.9) # Arrange plots on a grid
+
+
+    #diagnostic_retrieved <- diagnostic_retrieved +
+    #draw_label("Step", x=0.5, y=  0, vjust=-1, angle= 0) +
+    #draw_label("Predicted Accuracy", x=  0, y=0.5, vjust= 1, angle=90)
+
+  } #If combine_plots = TRUE, Combine Them to Single Plot and Return Plot (Else, Return List of Figures)
+
 
   return(diagnostic_retrieved)
 
 
-}
+} # Uodate 6/22
 
 
 
