@@ -1341,21 +1341,25 @@ pai <- function(data, #Data
             if (var %in% c(unlist(output$parameters$factors))) {
 
               if (parameters$outcome_type == 'Binomial'){
-                base_plot <- ggplot(data = temp_dat, aes(x = factor(step), y = onecount)) +
-                  geom_point() # Generate Base Plot
+                base_plot <- ggplot(data = temp_dat, aes(x = step, y = onecount)) +
+                  geom_point() +
+                  labs(x = paste0('\n', as.character(var))) # Generate Base Plot
               } else {
-                base_plot <- ggplot(data = temp_dat, aes(x = factor(step), y = diff)) +
-                  geom_point() # Generate Base Plot
+                base_plot <- ggplot(data = temp_dat, aes(x = step, y = diff)) +
+                  geom_point() +
+                  labs(x = paste0('\n', as.character(var))) # Generate Base Plot
               }
 
             } else {
 
               if (parameters$outcome_type == 'Binomial'){
                 base_plot <- ggplot(data = temp_dat, aes(x = step, y = onecount)) +
-                  geom_point() # Generate Base Plot
+                  geom_point() +
+                  labs(x = paste0('\n', as.character(var))) # Generate Base Plot
               } else {
                 base_plot <- ggplot(data = temp_dat, aes(x = step, y = diff)) +
-                  geom_point() # Generate Base Plot
+                  geom_point() +
+                  labs(x = paste0('\n', as.character(var))) # Generate Base Plot
               }
 
 
@@ -1392,8 +1396,7 @@ pai <- function(data, #Data
 
             base_plot <- base_plot +
               theme_minimal() +
-              labs(x = '\nStep\n',
-                   y = '\nPush Prediction\n') +
+              labs(y = '\nPush Prediction\n') +
               theme(
                 panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
                 axis.text = element_text(size = 12, colour = 'black'),
@@ -1502,7 +1505,8 @@ pai <- function(data, #Data
                         upper_ci = mean_accuracy + 1.96 * sd(accuracy) / sqrt(n()))
 
             temp_var_bootstrap_figure <- ggplot(temp_var_bootstrap_data, aes(x = if (temp_var %in% unlist(parameters$factors)) factor(.data[[temp_var]]) else .data[[temp_var]], y = mean_accuracy)) +
-              geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.5) +
+              geom_segment(aes(x = if (temp_var %in% unlist(parameters$factors)) factor(.data[[temp_var]]) else .data[[temp_var]], y = lower_ci, yend = upper_ci)) +
+              #geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.5) +
               geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci, fill = "95% Confidence\nIntervals"), alpha = 0.2) +  # Add shaded region
               geom_point(size = 2, aes(shape = 'Mean\nAccuracy'), fill = 'white') +  # Add points
               theme_minimal() +
@@ -1580,9 +1584,11 @@ pai <- function(data, #Data
 
   omitting_variables <- dropping_vars(parameters, output) #Run Omitting Vars
   output[['omitting_variables']] <- omitting_variables$fit_change #Append to Output
+  output[['omitting_variables_bootstrap']] <- omitting_variables$bootstrap_drop_var
   if (parameters$save_drop_var_models == TRUE){
-    output[['omitting_variables_bootstrap']] <- omitting_variables$bootstrap_drop_var
+    output[['omitting_variables_models_output']] <- omitting_variables$omitting_variables_models_output
   } # Append to Output if Parameter == TRUE
+
 
   fit_change <- left_join(placebo$placebo_summary, omitting_variables$fit_change, by = 'var') #Create Fit Change Frame
   output[['fit_change']] <- fit_change #Append to Output
@@ -1613,4 +1619,4 @@ pai <- function(data, #Data
 
 } #Predictions as Inference Main Function
 
-# Updated 6/22/2024
+# Updated 6/23/2024

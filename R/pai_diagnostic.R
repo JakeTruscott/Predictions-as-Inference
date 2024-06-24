@@ -33,6 +33,7 @@ pai_diagnostic_retrieval <- function(output,
 ){
 
   diagnostic_output <- output$diagnostics[[diagnostic]] #diagnostic = 'placebo', 'push', 'bootstrap'
+  diagnostic_retrieved <- list()
 
   if (diagnostic == 'placebo'){
 
@@ -77,34 +78,37 @@ pai_diagnostic_retrieval <- function(output,
 
       diagnostic_retrieved <- cowplot::plot_grid(temp_figure, other_figure, ncol = 1, rel_heights = c(2.5, 2))
 
+      return(diagnostic_retrieved)
+
     } else if (type == 'figure'){
 
       if (is.null(variables)){
-        diagnostic_retrieved <- diagnostic_output$placebo_full #Returns Full Placebo Figure
+        diagnostic_retrieved[[1]] <- diagnostic_output$placebo_full #Returns Full Placebo Figure
       } else {
-        diagnostic_retrieved <- diagnostic_output$placebo_full %+% subset(diagnostic_output$placebo_full$data, var %in% variables) #Returns Placebo Figure Filtered by Var(s)
+        diagnostic_retrieved[[1]] <- diagnostic_output$placebo_full %+% subset(diagnostic_output$placebo_full$data, var %in% variables) #Returns Placebo Figure Filtered by Var(s)
       } # If Variable(s) Declared
 
     } else if (type == 'bootstrap_drop_vars'){
 
       if (is.null(variables)){
-        diagnostic_retrieved <- diagnostic_output$bootstrap_omit_information #Returns Full Placebo Figure
+        diagnostic_retrieved[[1]] <- diagnostic_output$bootstrap_omit_information #Returns Full Placebo Figure
       } else {
-        diagnostic_retrieved <- diagnostic_output$bootstrap_omit_information %+% subset(diagnostic_output$bootstrap_omit_information$data, var %in% variables) #Returns Placebo Figure Filtered by Var(s)
+        diagnostic_retrieved[[1]] <- diagnostic_output$bootstrap_omit_information %+% subset(diagnostic_output$bootstrap_omit_information$data, var %in% variables) #Returns Placebo Figure Filtered by Var(s)
       } # If Variable(s) Declared
 
 
     } else if (type == 'placebo_confidence'){
 
       if (is.null(variables)){
-        diagnostic_retrieved <- diagnostic_output$placebo_CI #Returns Full Placebo Figure
+        diagnostic_retrieved[[1]] <- diagnostic_output$placebo_CI #Returns Full Placebo Figure
       } else {
-        diagnostic_retrieved <- diagnostic_output$placebo_CI %+% subset(diagnostic_output$placebo_CI$data, var %in% variables) #Returns Placebo Figure Filtered by Var(s)
+        diagnostic_retrieved[[1]] <- diagnostic_output$placebo_CI %+% subset(diagnostic_output$placebo_CI$data, var %in% variables) #Returns Placebo Figure Filtered by Var(s)
       } # If Variable(s) Declared
 
     } else {
 
       diagnostic_retrieved <- diagnostic_output$data #Returns Placebo Fit Data
+      return(diagnostic_retrieved)
 
     }
 
@@ -154,10 +158,11 @@ pai_diagnostic_retrieval <- function(output,
 
     if (type == 'data'){
       diagnostic_retrieved <- diagnostic_output$bootstrap_output
+      return(diagnostic_retrieved)
     } #If Type is Bootstrap Data Output
 
     if (type == 'distribution'){
-      diagnostic_retrieved <- diagnostic_output$bootstrap_distribution
+      diagnostic_retrieved[[1]] <- diagnostic_output$bootstrap_distribution
     } # If Type is Distribution Figure
 
     if (type == 'figure'){
@@ -236,7 +241,6 @@ pai_diagnostic_retrieval <- function(output,
 
   }
 
-
   for (i in 1:length(diagnostic_retrieved)){
 
     temp_diagnostic_plot <- diagnostic_retrieved[[i]]
@@ -254,18 +258,18 @@ pai_diagnostic_retrieval <- function(output,
       } # Xaxis Labels
 
       if (!is.null(rename_y_title)){
-        temp_diagnostic_plot <- temp_diagnostic_plot +
-          labs(y = rename_y_title)
+        temp_diagnostic_plot$labels$y = rename_y_title
+
       } #Yaxis Title
 
       if (!is.null(rename_x_title)){
-        temp_diagnostic_plot <- temp_diagnostic_plot +
-          labs(rename_x_title)
+        temp_diagnostic_plot$labels$x = rename_x_title
+
       } #Xaxis Title
 
       if (!is.null(rename_title)){
         temp_diagnostic_plot <- temp_diagnostic_plot +
-          labs(title = rename_title)
+          ggtitle(rename_title)
       } # Main Title
 
       if (!is.null(rename_subtitle)){
@@ -305,7 +309,7 @@ pai_diagnostic_retrieval <- function(output,
   return(diagnostic_retrieved)
 
 
-} # Uodate 6/22
+} # Updated 6/23
 
 
 
