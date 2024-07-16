@@ -792,10 +792,15 @@ pai <- function(data, #Data
       if (parameters$list_drop_vars == 'FALSE'){
         {
           combinations <- data.frame() # Create Empty DF for Combinations of Drop Vars
+          vars_to_drop <- parameters$predictors
 
           for (drop_var in 1:length(vars_to_drop)){
+
+            current_var <- vars_to_drop[drop_var]
             temp_drop_var <- vars_to_drop[drop_var]
             other_vars <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)]
+
+
             other_vars <- other_vars[!grepl('(\\*|\\:)', other_vars)]
             other_vars <- ifelse(other_vars %in% unlist(parameters$factors), paste0('factor(', other_vars, ')'), other_vars)
             other_interactions <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)]
@@ -815,6 +820,11 @@ pai <- function(data, #Data
               } #For Each Interaction - Separate + Add if factor() if Factor & Recombine
             } #If 'other_interactions' isn't empty
             other_vars <- c(other_vars, other_cleaned_interactions) #Combine All Vars Back Into Single Object
+
+            if (length(other_vars) == 0) {
+              message("\033[37m           Insufficient Variables in Group: \033[0m", current_var, '...Moving On') # Print Update
+              next
+            }
 
             outcome_variable <- ifelse(parameters$outcome_type == 'Binomial', paste0('factor(', parameters$outcome, ')'), parameters$outcome) # Add factor() to outcome_var if Binomially Distributed
 
@@ -836,14 +846,13 @@ pai <- function(data, #Data
 
           combinations <- data.frame()
           vars_to_drop <- parameters$drop_vars
-          other_vars <- parameters$predictors
 
           for (drop_var in 1:length(vars_to_drop)){
 
+            current_var <- names(vars_to_drop[drop_var])
             temp_drop_var <- parameters$drop_vars[[drop_var]] # Retrieve Temporary Var
             other_vars <- parameters$predictors[!parameters$predictors %in% unlist(temp_drop_var)] #Retrieve Other Vars
             other_vars <- other_vars[!grepl(paste(temp_drop_var, collapse = "|"), other_vars)] #Further Remove if Temp Var in Interaction
-
             other_vars <- ifelse(other_vars %in% unlist(parameters$factors), paste0('factor(', other_vars, ')'), other_vars)
             other_interactions <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)]
             other_interactions <- other_interactions[grepl('(\\*|\\:)', other_interactions)]
@@ -862,6 +871,11 @@ pai <- function(data, #Data
               } #For Each Interaction - Separate + Add if factor() if Factor & Recombine
             } #If 'other_interactions' isn't empty
             other_vars <- unique(c(other_vars, other_cleaned_interactions)) #Combine All Vars Back Into Single Object
+
+            if (length(other_vars) == 0) {
+              message("\033[37m           Insufficient Variables in Group: \033[0m", current_var, '...Moving On') # Print Update
+              next
+            }
 
             outcome_variable <- ifelse(parameters$outcome_type == 'Binomial', paste0('factor(', parameters$outcome, ')'), parameters$outcome) # Add factor() to outcome_var if Binomially Distributed
 
