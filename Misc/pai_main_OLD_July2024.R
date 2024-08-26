@@ -1,27 +1,29 @@
-#' PAI (Predictions as Inference)
+#' PAI Core Function
 #'
-#' @param data A structured data frame or tibble object containing a target variable of interest (y) and other predictors, providing a comprehensive framework for exploratory analysis and predictive modeling.
-#' @param model Machine learning model to employ in protocol: see `caret` (CRAN) for more information on available model types.
-#' @param outcome Target variable of interest (y); Can be distributed binomial or continuous.
-#' @param predictors Independent variables (x...n); Can be declared directly -- e.g., c(var1, var2, etc...) -- or defaults to ALL variables not declared as `outcome` if blank or NULL.
-#' @param interactions Interactive term(s) -- Note: Define each interaction element within a vector (ex: c(var1*var2)); Can also declare multiple interaction terms within vector separated by a comma.
-#' @param drop_vars Specific terms from `predictors` and (or) `interactions` to drop during information omission protocol. If `list_drop_vars` = TRUE, it will drop grouped terms rather than individual.
-#' @param save_drop_var_models If TRUE, will store output from omitted variable models in output object.
+#' @param data A structured dataset featuring a target variable of interest (y) and other predictors , providing a comprehensive framework for exploratory analysis and predictive modeling.
+#' @param model Machine learning model to employ in protocol; see `caret` (CRAN) for more information on available models.
+#' @param outcome Target variable of interest (y); Can be distributed binomialy or continuously.
+#' @param predictors Covariate(s); can declare directly or defaults to all if blank or NULL.
+#' @param interactions Interactive term(s); Define each interaction within a vector as "Var1*Var2" & separated by a comma.
+#' @param drop_vars Specific terms from `predictors` and (or) `interactions` to drop during information omission protocol.
 #' @param cores Number of computing cores to employ for parallel processing; Defaults to 1.
 #' @param placebo_iterations Number of placebo iterations to employ; Defaults to 10.
-#' @param folds Number of K-Folds to employ during `trainControl`; Defaults to 5.
-#' @param train_split Proportion of data for Train/Test split; Defaults to 0.9 (Indicating an 80/20 Train-Test split.)
-#' @param drop_sparse_vars If TRUE, will drop variables with sparse data observed in Train/Test split.
-#' @param sparse_variable_threshold If `drop_sparse_vars` = TRUE, will declare a minimum proportion threshold in deciding whether to drop variables with observed sparcity in Train/Test split; Defaults to (0.3).
-#' @param custom_tc Custom `trainControl` parameters for unique model selection & specificatin from `caret`; Defaults to "common" parameters for `parRF`, `adaboost`, and `rf` (i.e., tree-based methods).
-#' @param assign_factors Integer representing number of unique levels to auto-assign factor status in estimation & prediction; Defaults to 3.
+#' @param folds Number of K-Folds to employ during `trainControl`; Defaults to 5
+#' @param train_split Proportion of data for Train/Test split; Defaults to 0.8 (Indicating an 80/20 Train/Test Split).
+#' @param drop_sparse_vars If TRUE, will drop variables with sparse data observed in Train/Test Split.
+#' @param custom_tc Custom `trainControl` parameters for unique model selection from `caret`; Defaults to common parameters for `parRF`, `adaboost`, and `rf` (i.e., tree-based methods).
+#' @param assign_factors Integer representing number of levels to auto-assign factor terms; Defaults to 3.
 #' @param list_drop_vars If TRUE, allows for the assignment of several variables to drop concurrently as indicated by objects stored in global environment.
-#' @param seed Random seed; Defaults to 1234
+#' @param seed Random Seed; Defaults to 1234
 #'
 #' @return
 #' @export
 #'
 #' @examples
+#' Example Using adaboost with sandbox_data and 5 Cores
+#' adaboost_test <- pai(data = sandbox_data, model = 'adaboost', outcome = 'var1', predictors = NULL, interactions = c('var2:var3', 'var4:var5'), cores = 5)
+#' Example Using parRF with sandbox_data and list_drop_vars
+#' parRF_test <- pai(data = sandbox_data, model = 'parRF', outcome = 'var1', predictors = NULL, list_drop_vars = c(group_1 = c('var2', 'var3', var'4)))
 pai <- function(data, #Data
                 model = NULL, #Caret Model
                 outcome = NULL, #DV
@@ -1630,3 +1632,5 @@ pai <- function(data, #Data
   return(output) #Return Output Object
 
 } #Predictions as Inference Main Function
+
+# Updated 6/23/2024

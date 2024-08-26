@@ -11,7 +11,7 @@ This is a package designed for use in ```R``` that allows for the implementation
 
 
 ## *Notice* 
-This package is currently in development (as of April 2024). For early access, use:
+This package is currently in development (as of August 2024). For early access, use:
 
 ```
 remotes::install_github("JakeTruscott/predictions-as-inference")
@@ -20,6 +20,5 @@ remotes::install_github("JakeTruscott/predictions-as-inference")
 ## About Package Developer
   
 Jake S. Truscott, Ph.D  
-[![Follow @JakeTruscott_44](https://img.shields.io/twitter/follow/JakeTruscott_44?style=social)](https://twitter.com/JakeTruscott_44) <br> C-Span Center for Scholarship and Engagement, Purdue University (West Lafayette, IN) <br>
-University of Florida, Department of Political Science (Beginning Fall 2024)
+[![Follow @JakeTruscott_44](https://img.shields.io/twitter/follow/JakeTruscott_44?style=social)](https://twitter.com/JakeTruscott_44) <br> University of Florida, Department of Political Science
 

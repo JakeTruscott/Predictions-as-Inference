@@ -3,7 +3,7 @@ Type: Package
 Title: Predictions-as-Inference
 Version: 0.1.0
 Author: Jake S. Truscott
-Maintainer: Jake S. Truscott <jtruscot@purdue.edu>
+Maintainer: Jake S. Truscott <jaketruscott@ufl.edu>
 Description: Package allows for flexible application of ensemble machine learning models using caret and subsequent diagnostic regiment to assess data generating processes with the potential for complex, non-linear functional forms and deep interactions.
 License: MIT
 Encoding: UTF-8
@@ -23,4 +23,5 @@ Imports:
   patchwork,
   randomForest,
   rlist,
-  xgboost
+  xgboost, 
+  ggridges
