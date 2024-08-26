@@ -2,7 +2,7 @@
 % Please edit documentation in R/pai_main.R
 \name{pai}
 \alias{pai}
-\title{PAI Core Function}
+\title{PAI (Predictions as Inference)}
 \usage{
 pai(
   data,
@@ -11,10 +11,13 @@ pai(
   predictors = NULL,
   interactions = NULL,
   drop_vars = NULL,
+  save_drop_var_models = FALSE,
   cores = NULL,
   placebo_iterations = NULL,
   folds = NULL,
   train_split = 0.8,
+  drop_sparse_vars = TRUE,
+  sparse_variable_threshold = NULL,
   custom_tc = FALSE,
   assign_factors = 3,
   list_drop_vars = FALSE,
@@ -22,34 +25,40 @@ pai(
 )
 }
 \arguments{
-\item{data}{A structured dataset featuring a target variable of interest (y) and other predictors , providing a comprehensive framework for exploratory analysis and predictive modeling.}
+\item{data}{A structured data frame or tibble object containing a target variable of interest (y) and other predictors, providing a comprehensive framework for exploratory analysis and predictive modeling.}
 
-\item{model}{Machine learning model to employ in protocol; see `caret` (CRAN) for more information on available models.}
+\item{model}{Machine learning model to employ in protocol: see `caret` (CRAN) for more information on available model types.}
 
-\item{outcome}{Target variable of interest (y); Can be distributed binomialy or continuously.}
+\item{outcome}{Target variable of interest (y); Can be distributed binomial or continuous.}
 
-\item{predictors}{Covariate(s); can declare directly or defaults to all if blank or NULL.}
+\item{predictors}{Independent variables (x...n); Can be declared directly -- e.g., c(var1, var2, etc...) -- or defaults to ALL variables not declared as `outcome` if blank or NULL.}
 
-\item{interactions}{Interactive term(s); Define each interaction within a vector as "Var1*Var2" & separated by a comma.}
+\item{interactions}{Interactive term(s) -- Note: Define each interaction element within a vector (ex: c(var1*var2)); Can also declare multiple interaction terms within vector separated by a comma.}
 
-\item{drop_vars}{Specific terms from `predictors` and (or) `interactions` to drop during information omission protocol.}
+\item{drop_vars}{Specific terms from `predictors` and (or) `interactions` to drop during information omission protocol. If `list_drop_vars` = TRUE, it will drop grouped terms rather than individual.}
+
+\item{save_drop_var_models}{If TRUE, will store output from omitted variable models in output object.}
 
 \item{cores}{Number of computing cores to employ for parallel processing; Defaults to 1.}
 
 \item{placebo_iterations}{Number of placebo iterations to employ; Defaults to 10.}
 
-\item{folds}{Number of K-Folds to employ during `trainControl`; Defaults to 5}
+\item{folds}{Number of K-Folds to employ during `trainControl`; Defaults to 5.}
 
-\item{train_split}{Proportion of data for Train/Test split; Defaults to 0.8 (Indicating an 80/20 Train/Test Split).}
+\item{train_split}{Proportion of data for Train/Test split; Defaults to 0.9 (Indicating an 80/20 Train-Test split.)}
 
-\item{custom_tc}{Custom `trainControl` parameters for unique model selection from `caret`; Defaults to common parameters for `parRF`, `adaboost`, and `rf` (i.e., tree-based methods).}
+\item{drop_sparse_vars}{If TRUE, will drop variables with sparse data observed in Train/Test split.}
 
-\item{assign_factors}{Integer representing number of levels to auto-assign factor terms; Defaults to 3.}
+\item{sparse_variable_threshold}{If `drop_sparse_vars` = TRUE, will declare a minimum proportion threshold in deciding whether to drop variables with observed sparcity in Train/Test split; Defaults to (0.3).}
+
+\item{custom_tc}{Custom `trainControl` parameters for unique model selection & specificatin from `caret`; Defaults to "common" parameters for `parRF`, `adaboost`, and `rf` (i.e., tree-based methods).}
+
+\item{assign_factors}{Integer representing number of unique levels to auto-assign factor status in estimation & prediction; Defaults to 3.}
 
 \item{list_drop_vars}{If TRUE, allows for the assignment of several variables to drop concurrently as indicated by objects stored in global environment.}
 
-\item{seed}{Random Seed; Defaults to 1234}
+\item{seed}{Random seed; Defaults to 1234}
 }
 \description{
-PAI Core Function
+PAI (Predictions as Inference)
 }

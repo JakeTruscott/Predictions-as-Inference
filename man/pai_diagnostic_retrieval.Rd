@@ -9,13 +9,20 @@ pai_diagnostic_retrieval(
   diagnostic,
   type,
   variables = NULL,
-  combine_plots = FALSE
+  combine_plots = FALSE,
+  rename_y_title = NULL,
+  rename_x_title = NULL,
+  rename_x_labels = NULL,
+  rename_y_labels = NULL,
+  rename_title = NULL,
+  rename_subtitle = NULL,
+  rename_caption = NULL
 )
 }
 \arguments{
 \item{output}{Output object from `pai()`}
 
-\item{diagnostic}{Diagnostic element to return. Options: `placebo`, `push`, or `bootstrap`}
+\item{diagnostic}{Diagnostic element to return. Options: `placebo`, `push`, `bootstrap`, or `summary`}
 
 \item{type}{Diagnostic subset to return. Options `data`, `figure`, or `distribution` (`bootstrap` ONLY)}
 
@@ -27,12 +34,8 @@ pai_diagnostic_retrieval(
 PAI Diagnostic Retrieval Function
 }
 \examples{
-Placebo Example
-placebo <- pai_diagnostic_retrieval(output = output, diagnostic = 'placebo')
-Push Example with combined plots and subset of var2 and var4
-push <- pai_diagnostic_retrieval(output = output, diagnostic = 'push', type = 'figure', variables = c('var2', 'var4'), combine_plots = TRUE)
-Bootstrap Example with variable-level plots
-boostrap <- pai_diagnostic_retrieval(output = output, diagnostic = 'boostrap', type = 'figure', combine_plots = TRUE)
-Boostrap Distribution Example
-boostrap_distribution <- pai_diagnostic_retrieval(output = output, diagnostic = 'boostrap', type = 'distribution')
+# placebo <- pai_diagnostic_retrieval(output = output, diagnostic = 'all')
+# push <- pai_diagnostic_retrieval(output = output, diagnostic = 'push', type = 'figure', variables = c('var2', 'var4'), combine_plots = TRUE)
+# bootstrap <- pai_diagnostic_retrieval(output = output, diagnostic = 'bootstrap', type = 'figure', combine_plots = TRUE)
+# bootstrap_distribution <- pai_diagnostic_retrieval(output = output, diagnostic = 'bootstrap', type = 'distribution')
 }
