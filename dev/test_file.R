@@ -92,7 +92,7 @@ rm(list=setdiff(ls(), c('js', 'drop_var_list')))
 
 
 data = js #Data
-model = 'parF' #Caret Model
+model = 'parRF' #Caret Model
 outcome = 'direction' #DV
 predictors = NULL #IVs
 interactions = NULL #Interactive Terms
@@ -106,7 +106,8 @@ assign_factors = 5 #Defaults to 3 - Change to Any Number
 list_drop_vars = TRUE #Defaults to FALSE
 seed = 254
 drop_sparse_vars = T
-
+save_drop_var_models = F
+sparse_variable_threshold = NULL
 
 js_test <- pai(data = js,
                model = 'parRF',
