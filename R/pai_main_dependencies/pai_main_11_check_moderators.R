@@ -1,3 +1,9 @@
+#- doubleML is fine
+#- declaring potential moderators is fine
+#- classic use case (diagnostics) -- Instead of regression "as best as possible, what the *TRUE* effects are"
+#- for HTE's -- put it on the user to construct data correctly
+
+
 check_moderator <- function(parameters, output){
 
   declared_model_output <- output[['declared_model']] # Retrieve Initial Model
@@ -69,3 +75,108 @@ check_moderator <- function(parameters, output){
   return(moderator_output)
 
   } # Moderators
+
+output <- js_test
+
+check_moderator_doubleML <- function(output){
+
+  message('Note: DoubleML Requires All Variables Retain Numeric or Integer Structure -- Converting Factor and Character Values Using One-Hot Encoding')
+
+  parameters <- output[['parameters']] # Retrieve Params from Output Object
+  declared_dv <- parameters[['outcome']] # Outcome (Declared DV)
+  suppress_message(full_data <- parameters[['full_data']] %>%
+    mutate(across(where(~ is.character(.) | is.factor(.)), ~ as.numeric(as.factor(.))))) # Full Dataset
+
+  declared_dv_type <- parameters[['outcome_type']] # Declared DV Type (Binomial v. Continuous)
+
+  if (declared_dv_type == 'Binomial'){
+    if (!all(unique(full_data[[declared_dv]]) %in% c(0, 1)) || length(unique(full_data[[declared_dv]])) != 2){
+      message("\033[97mNote:\033[0m DoubleML With Dichotomous (Binary) Dependent Variable Requires Integer (0/1) Structure\nRe-Encoding:\033[0m")
+      message('     --- \033[97m', min(full_data[[declared_dv]]), ' = 0\033[0m')
+      message('\033[97m     --- \033[97m', max(full_data[[declared_dv]]), ' = 1\033[0m')
+      full_data <- full_data %>%
+        mutate(!!declared_dv := ifelse(!!sym(declared_dv) == min(!!sym(declared_dv)), 0, 1))
+
+    } # If Dichotomous DV and Not Distributed (0,1) -- Convert Min to 0, Max to 1
+  } # If Dichotomous DV
+
+  declared_treatments <- parameters[['moderators']] <- c('sal.lat.issuemood', 'mqmean')
+  #declared_treatments <- parameters[['moderators']] # Declared Moderator(s)
+
+  for (moderator in 1:length(declared_treatments)){
+
+    declared_covariates <- names(full_data)[names(full_data) %in% parameters[['predictors']]] # Reduce Full Data to Just Predictors
+    declared_covariates <- setdiff(declared_covariates, c(declared_dv, declared_treatments[moderator])) # Redundancy: Make Sure DF & Active Moderator Also Removed
+
+    moderator_structure <- ifelse(length(unique(full_data[[declared_treatments[moderator]]])) > 2, 'Continuous', 'Binomial')
+
+    {
+
+      assign_doubleML_models <- function(declared_dv_type, moderator_structure) {
+        ml_l = lrn("regr.ranger")  # Random forest for Continuous outcomes
+        ml_m = lrn("classif.ranger", predict_type = "prob")  # Random forest for classification
+        if (declared_dv_type == "Continuous" & moderator_structure == "Continuous") {
+          ml_g = ml_l  # Regression for DV
+          ml_m = ml_l  # Regression for Treatment
+          method = "dml2"
+          score = "IV-type"
+        } else if (declared_dv_type == "Continuous" & moderator_structure == "Binomial") {
+          ml_g = ml_l  # Regression for DV
+          ml_m = ml_m  # Classification for Treatment
+          method = "dml2"
+          score = "partialling out"
+        } else if (declared_dv_type == "Binomial" & moderator_structure == "Continuous") {
+          ml_g = ml_m  # Classification for DV
+          ml_m = ml_l  # Regression for Treatment
+          method = "dml2"
+          score = "IV-type"
+        } else if (declared_dv_type == "Binomial" & moderator_structure == "Binomial") {
+          ml_g = ml_m  # Classification for DV
+          ml_m = ml_m  # Classification for Treatment
+          method = "dml2"
+          score = "ATE"
+        } else {
+          stop("Invalid input: declared_dv_type and moderator_structure should be 'Continuous' or 'Binomial'.")
+        }
+
+        return(list(ml_g = ml_g, ml_m = ml_m, method = method, score = score))
+      }
+
+
+    } # Assigning DoubleML Parameters Given Structures of DV & Treatment (Moderator)
+
+    model_settings <- assign_doubleML_models(declared_dv_type, moderator_structure) # Run Above Function
+
+
+    dml_data_temp <- DoubleMLData$new(data = full_data,
+                                      y_col = declared_dv,
+                                      d_cols = declared_treatments[moderator],
+                                      x_cols = declared_covariates) # Convert to DoubleML Bindings
+
+
+    if (moderator_structure == "Continuous") {
+      dml_model <- DoubleMLPLR$new(
+        data = dml_data_temp,
+        ml_g = model_settings$ml_g,
+        ml_m = model_settings$ml_m,
+        dml_procedure = model_settings$method,
+        score = model_settings$score
+      )
+    } else {
+      dml_model <- DoubleMLIRM$new(
+        data = dml_data_temp,
+        ml_g = model_settings$ml_g,
+        ml_m = model_settings$ml_m,
+        dml_procedure = model_settings$method,
+        score = model_settings$score
+      )
+    }
+
+    dml_model$fit()
+
+  }
+
+
+
+
+}
