@@ -2,7 +2,7 @@
 
 <div style="text-align: center;">
 
-  <img src="Misc/PAI_hex.png" alt="Predictions as Inference (R)" style="width: 50%; max-width: 300px; margin-bottom: 10px;" />
+  <img src="misc/images/PAI_hex.png" alt="Predictions as Inference (R)" style="width: 50%; max-width: 300px; margin-bottom: 10px;" />
 </div>
 <hr style="margin-top: 10px; margin-bottom: 10px;">
      
