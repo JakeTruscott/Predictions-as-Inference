@@ -69,11 +69,12 @@ placebo_shuffle <- function(declared_model, parameters, output){
 
     } else {
 
-      for (var in variables){
+      for (var in 1:length(variables)){
 
         shuffle_data <- parameters$test_set #Get Test Data
+        temp_var <- variables[var]
 
-        vars_to_shuffle <- c(var, unlist(stringr::str_split(var, pattern = '(\\*|\\:)'))) #Get All Vars (Including Interactions w/ Vars)
+        vars_to_shuffle <- c(temp_var, unlist(stringr::str_split(temp_var, pattern = '(\\*|\\:)'))) #Get All Vars (Including Interactions w/ Vars)
         vars_to_shuffle <- vars_to_shuffle[!grepl('(\\*|\\:)', vars_to_shuffle)] #Shuffle Stand-Alone Vars -- Recompile Interactions
         interaction_vars <- variables[grepl('(\\*|\\:)', variables)] #Grab Interaction Terms from variables vector
 
@@ -99,12 +100,12 @@ placebo_shuffle <- function(declared_model, parameters, output){
           accuracy_change <- shuffled_accuracy - original_accuracy #Get Pred Accuracy Change if Binomial DV
 
         } else {
-          shuffled_predictions <- sqrt(mean((shuffled_predictions - test_data[[parameters$outcome]])^2)) # If DV is Continuous...
+          shuffled_accuracy <- sqrt(mean((shuffled_predictions - test_data[[parameters$outcome]])^2)) # If DV is Continuous...
           accuracy_change <- shuffled_predictions - original_predictions #Get Root Mean Squared Error Change in Continuous DV
         }
 
 
-        placebo_temp <- data.frame(rep_count = rep, variable = names(variables[drop_group]), shuffled_accuracy = shuffled_accuracy) # Store the accuracy change
+        placebo_temp <- data.frame(rep_count = rep, variable = temp_var, shuffled_accuracy = shuffled_accuracy) # Store the accuracy change
         placebos <- dplyr::bind_rows(placebos, placebo_temp) # Store
 
 

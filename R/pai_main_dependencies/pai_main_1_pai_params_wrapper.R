@@ -1,4 +1,4 @@
-pai_params_wrapper <- function(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed){
+pai_params_wrapper <- function(data, model, outcome, predictors, interactions, drop_vars, save_drop_var_models, cores, placebo_iterations, folds, train_split, drop_sparse_vars, sparse_variable_threshold, custom_tc, assign_factors, list_drop_vars, seed){
 
   {
 
@@ -33,11 +33,6 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
       parameters[['interactions']] <- NULL
     } #Declare Interaction Terms
 
-    if (is.null(moderators)){
-      parameters[['moderators']] <- NULL
-    } else {
-      parameters[['moderators']] <- moderators
-    } # Declare Moderator(s)
 
     if (is.null(drop_vars)){
       parameters[['drop_vars']] <- c(parameters[['predictors']], parameters[['interactions']])
@@ -291,7 +286,8 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
       if (is.null(assign_factors)){
         factors <- c(factors)
       } else {
-        factors <- paste0('factor(', factors, ')') #Add 'as.factor' to factors
+        factors_adj <- paste0('factor(', factors, ')') #Add 'as.factor' to factors
+        factors <- ifelse(factors_adj == 'factor()', factors, factors_adj)
 
       }
 
@@ -404,7 +400,7 @@ pai_params_wrapper <- function(data, model, outcome, predictors, interactions, d
 
       dv <- ifelse(parameters$outcome_type == 'Binomial', paste0('factor(', dv, ')'), dv) #Get DV
 
-      parameters[['base_formula']] <- paste0(dv, '~', paste(formula_vars, collapse = "+")) #Create Formula
+      parameters[['base_formula']] <- paste0(dv, '~', paste(formula_vars[!is.na(formula_vars)], collapse = "+")) #Create Formula
 
 
     } #Create Formula (+ Message for What Was Tossed b/c Sparse)

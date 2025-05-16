@@ -136,7 +136,7 @@ dropping_vars <- function(parameters, output){
         original_accuracy = length(which(original_predictions==test_data[[parameters$outcome]]))/length(original_predictions)
       } else {
         original_predictions <- predict(output$declared_model, test_data, na.action = na.pass)
-        original_accuracy <- sqrt(mean((new_predictions - test_data[[parameters$outcome]])^2)) # If DV is Continuous...
+        original_accuracy <- sqrt(mean((original_predictions - test_data[[parameters$outcome]])^2)) # If DV is Continuous...
       } # Get Original Predictions & Accuracy
 
       if (parameters$outcome_type == 'Binomial'){
