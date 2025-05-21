@@ -31,6 +31,7 @@ pai <- function(data, #Data
                 save_drop_var_models = FALSE, # Defaults to FALSE
                 cores = NULL, #Defaults to 1
                 placebo_iterations = NULL, #Defaults to 10
+                outcome_type = NULL, # Set "Binomial/Dichotomous/Categorical" or "Continuous" (Automatically Assumes non-Continuous if Less than 5 Unique Values)
                 folds = NULL, #Defaults to 5
                 train_split = 0.8, #Defaults to 80/20
                 drop_sparse_vars = TRUE,
@@ -38,7 +39,7 @@ pai <- function(data, #Data
                 custom_tc = FALSE, #Defaults to Basic TC (3 Repeats, Assigned K-Folds, etc.)
                 assign_factors = 3, #Defaults to 3 - Change to Any Number
                 list_drop_vars = FALSE, #Defaults to FALSE
-                seed = 1234 #Defaults to 1234
+                seed = NULL #Defaults to 1234
 ){
 
 
@@ -54,12 +55,29 @@ pai <- function(data, #Data
           "\033[32m---------------------- Beginning PAI Process ----------------------\033[0m\n",
           "\033[34m-------------------------------------------------------------------\033[0m\n") #Start Message
 
-  set.seed(seed) #Set Random Seed (Defaults to 1234)
+  temp_seed <- ifelse(is.null(seed), 1234, seed)
+  set.seed(temp_seed) #Set Random Seed (Defaults to 1234)
 
   output <- list()
 
-  parameters <- pai_params_wrapper(data, model, outcome, predictors, interactions, drop_vars, save_drop_var_models, cores, placebo_iterations, folds, train_split, drop_sparse_vars, sparse_variable_threshold, custom_tc, assign_factors, list_drop_vars, seed)
-  #parameters <- pai_params_wrapper(data, model, outcome, predictors, interactions, drop_vars, cores, placebo_iterations, folds, train_split, custom_tc, assign_factors, list_drop_vars, seed, drop_sparse_vars) #Compile Parameters from Input Declarations
+  parameters <- pai_params_wrapper(data = data,
+                                   model = model,
+                                   outcome = outcome,
+                                   outcome_type = outcome_type,
+                                   predictors = predictors,
+                                   interactions = interactions,
+                                   drop_vars = drop_vars,
+                                   save_drop_var_models = save_drop_var_models,
+                                   cores = cores,
+                                   placebo_iterations = placebo_iterations,
+                                   folds = folds,
+                                   train_split = train_split,
+                                   drop_sparse_vars = drop_sparse_vars,
+                                   sparse_variable_threshold = sparse_variable_threshold,
+                                   custom_tc = custom_tc,
+                                   assign_factors = assign_factors,
+                                   list_drop_vars = list_drop_vars,
+                                   seed = temp_seed) #Compile Parameters from Input Declarations
   output[['parameters']] <- parameters #Add Parameters to Output Object
 
   print_parameters(parameters) #Print Parameters

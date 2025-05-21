@@ -16,13 +16,14 @@ library(dplyr)
 
 papers <- list.files(file.path('misc', 'hainmueller_replication', 'Data'), full.names = T)
 papers <- papers[!grepl('Banks_Valentino_AJPS_2012', papers, ignore.case = T)]
+papers <- papers[!grepl('Bodea', papers, ignore.case = T)]
 hainmueller_list <- get(load('hainmueller_replication/data/hainmueller_list.rdata'))
 hainmueller <- list()
 
 for (i in 1:length(papers)){
 
   temp_paper <- papers[i] # Grab Temp Paper
-  temp_data_files <- list.files(papers[i], pattern = '.dta', full.names = T) # Recover DTA Files
+  temp_data_files <- list.files(papers[i], pattern = '.dta', full.names = T)[1] # Recover DTA Files
 
   temp_paper_name <- gsub('.*\\/', '', gsub('\\.dta', '', temp_data_files[1])) # Recover Name
   temp_paper_name <- gsub('(a$|b$)', '', temp_paper_name)
@@ -51,7 +52,16 @@ for (i in 1:length(papers)){
                      paste(c(paste(temp_paper_meta$X, temp_paper_meta$D, sep = ":")), collapse = " + ")))
   }
 
-  temp_data <- na.omit(foreign::read.dta(temp_data_files[1])) # Pull First Paper (Shouldn't Be Multiple)
+  temp_data <- haven::read_dta(temp_data_files[1]) # Pull First Paper (Shouldn't Be Multiple)
+  temp_data[] <- lapply(temp_data, function(x) {
+    attr(x, "label") <- NULL
+    return(x)
+  })
+  temp_data <- as.data.frame(temp_data)
+  vars_to_keep <- c(temp_paper_meta$Y, temp_paper_meta$D, temp_paper_meta$X, temp_paper_meta$Z)
+  temp_data <- temp_data[names(temp_data) %in% vars_to_keep]
+
+
   dv_structure <- ifelse(length(unique(temp_data[[as.character(temp_paper_meta$Y)]])) <= 2, 'Binomial', 'Continuous')
 
   hainmueller[[as.character(temp_paper_name)]] <- list(dv_structure = dv_structure,
@@ -83,9 +93,17 @@ for (i in 1:length(hainmueller)){
 
   temp_rep <- hainmueller[[i]] # Grab Temp Rep
   temp_rep_name <- names(hainmueller[i]) # Get Temp Name
+  temp_output_path <- file.path(output_folder, paste0(temp_rep_name, '.rdata')) # Compile Temp Output Path
+
+  if (file.exists(temp_output_path)){
+    message('Already Completed ', temp_rep_name, '.... Moving On')
+    next
+  }
 
   temp_rep_lm <- lm(temp_rep$formula, data = temp_rep$data) # Basic LM
   temp_rep_multiplicative <- lm(temp_rep$multiplicative_formula, data = temp_rep$data) # Multiplicative LM
+
+  temp_rep$data <- na.omit(temp_rep$data)
 
   message('Beginning PAI For ', temp_rep_name)
 
@@ -94,7 +112,8 @@ for (i in 1:length(hainmueller)){
               outcome = as.character(temp_rep$meta$Y),
               predictors = as.character(names(temp_rep$data[!names(temp_rep$data) %in% temp_rep$meta$Y])),
               cores = 10,
-              drop_sparse_vars = F) # Run RF w/ 10 Cores
+              assign_factors = 10,
+              placebo_iterations = 50) # Run RF w/ 10 Cores
 
   hainmueller_runs_combined[[as.character(temp_rep_name)]]  <- list() # Empty List
   hainmueller_runs_combined[[as.character(temp_rep_name)]][['lm']] <- temp_rep_lm # Export LM
@@ -107,23 +126,4 @@ for (i in 1:length(hainmueller)){
 
 }
 
-
-
-data = temp_rep$data
-model = 'rf'
-outcome = as.character(temp_rep$meta$Y)
-predictors = as.character(names(temp_rep$data[!names(temp_rep$data) %in% temp_rep$meta$Y]))
-interactions = NULL #Interactive Terms
-drop_vars = NULL #Defaults to All
-save_drop_var_models = FALSE # Defaults to FALSE
-cores = NULL #Defaults to 1
-placebo_iterations = NULL #Defaults to 10
-folds = NULL #Defaults to 5
-train_split = 0.8 #Defaults to 80/20
-drop_sparse_vars = TRUE
-sparse_variable_threshold = NULL # Total Number of Observations Required For Factor Value[x] (If Below Threshold Will Default to 888)
-custom_tc = FALSE #Defaults to Basic TC (3 Repeats Assigned K-Folds etc.)
-assign_factors = 3 #Defaults to 3 - Change to Any Number
-list_drop_vars = FALSE #Defaults to FALSE
-seed = 1234
 

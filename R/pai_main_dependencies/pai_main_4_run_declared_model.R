@@ -1,6 +1,6 @@
 declared_model <- function(parameters){
 
-  declared_model <- suppressMessages(suppressWarnings(caret::train(form = as.formula(parameters$base_formula),
+  declared_model <- suppressMessages(suppressWarnings(caret::train(form = stats::as.formula(parameters$base_formula),
                                                                    data = parameters$train_set,
                                                                    metric = ifelse(parameters$outcome_type == 'Binomial', 'Accuracy', 'RMSE'),
                                                                    method = as.character(parameters$model),
