@@ -18,7 +18,7 @@ source(file.path(pai_dir, 'code', 'pai_diagnostic.R')) # Source PAI Diagnostic
 
 hainmueller_replications <- list.files(file.path(pai_dir, 'pai_diagnostics'), full.names = T) # List Diagnostics
 
-temp_diagnostic <- get(load(hainmueller_replications[1])) # Replace Index With Associated File
+temp_diagnostic <- get(load(hainmueller_replications[2])) # Replace Index With Associated File
 
 ################################################################################
 # Render Individual Diagnostics
@@ -70,4 +70,9 @@ temp_diagnostic$summary$`Variable Importance` # Variable Importance
 
 temp_diagnostic$summary # Prints All Summary Info (May Be Different Beyond Perfomance & VarImp Re: DV)
 
+###########################################
+# Interaction Effect
+###########################################
+
+temp_diagnostic$AME_interaction
 

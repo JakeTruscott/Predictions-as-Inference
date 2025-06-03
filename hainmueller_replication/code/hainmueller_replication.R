@@ -37,7 +37,6 @@ for (i in 1:length(papers)){
 
       temp_data_path <- file.path('misc', 'hainmueller_replication', 'Data', temp_paper_name, temp_rep$data) # Recover Data Path
       data <- foreign::read.dta(temp_data_path, convert.factors = F) # Load Data
-      vars_to_keep <- unlist(Filter(Negate(is.null), list(temp_rep$Y, temp_rep$D, temp_rep$X, temp_rep$Z, temp_rep$FE)))
 
       if (!is.null(temp_rep$custom)){
         assign("data", data)
@@ -46,7 +45,6 @@ for (i in 1:length(papers)){
         }
       }  # Custom Data Transformation (If Indicated)
 
-      data <- data[names(data) %in% vars_to_keep]
 
       data[] <- lapply(data, function(x) {
         attr(x, "label") <- NULL
@@ -114,7 +112,7 @@ load('hainmueller_replication/data/hainmueller_meta.rdata') # Load Hainmueller F
 
 output_folder <- file.path('hainmueller_replication', 'pai_runs')
 
-for (i in 36:length(hainmueller)){
+for (i in 40:length(hainmueller)){
 
   temp_rep <- hainmueller[[i]] # Grab Temp Rep
   temp_rep_name <- names(hainmueller[i]) # Get Temp Name
@@ -128,6 +126,60 @@ for (i in 36:length(hainmueller)){
   if (is.null(temp_rep$meta$FE)){
     temp_rep$meta$FE <- NULL
   }
+
+
+  {
+
+    if (grepl('vernby', temp_rep_name, ignore.case = T)){
+
+      data <- temp_rep$data
+
+      school1<-data[data$term==1,c("term","code","schooling","socialvard")]
+      school2<-data[data$term==2,c("term","code","schooling","socialvard")]
+      school1<-school1[order(school1$code),]
+      school2<-school2[order(school2$code),]
+      school.diff<-school2$schooling - school1$schooling
+      socialvard.diff<-school2$socialvard - school1$socialvard
+      diff.dvs<-cbind.data.frame(school.diff= school.diff, socialvard.diff= socialvard.diff, code=school1$code  )
+      first<-data[data$term==1, c("code","Taxbase2","pop","manu")]
+      first<-first[order(first$code),]
+      second<-data[data$term==2, c("code","Taxbase2","pop","manu")]
+      second<-second[order(second$code),]
+      names(second)<-c("code","Taxbase2.2","pop.2","manu.2")
+
+      data2<-cbind.data.frame(diff.dvs, first, second)
+      noncitvotsh <-data$noncitvotsh[data$term==2]
+      noncit5 <-data$noncit5[data$term==2]
+      noncit5<-noncit5[order(data$code[data$term==2])]
+      noncit15 <-data$noncit15[data$term==2]
+      noncit15<-noncit15[order(data$code[data$term==2])]
+      noncitvotsh <-data$noncitvotsh[data$term==2]
+      noncitvotsh <-noncitvotsh[order(data$code[data$term==2])]
+      int<-data$noncitvotsh*data$noncit15
+      int<-int[order(data$code)]
+      int<-int[seq(2, length(int),2)]
+      data2$int<-int
+      int2<-data$noncitvotsh*data$noncit5
+      int2<-int2[order(data$code)]
+      int2<-int2[seq(2, length(int2),2)]
+      data2$int2<-int2
+      data2$noncit5<-noncit5
+      data2$noncit15<-noncit15
+      data2$noncitvotsh<-noncitvotsh
+
+      data <- data2
+      temp_rep$data <- data
+
+    }
+
+
+  } # Vernby Special Data Pre-Processing
+
+  {
+    vars_to_keep <- unlist(Filter(Negate(is.null), list(temp_rep$meta$Y, temp_rep$meta$D, temp_rep$meta$X, temp_rep$meta$Z, temp_rep$meta$FE)))
+    temp_rep$data <- temp_rep$data[names(temp_rep$data) %in% vars_to_keep]
+
+  } # Filter Data to Necessary Vars
 
   temp_rep_lm <- lm(temp_rep$formula, data = temp_rep$data) # Basic LM
   temp_rep_multiplicative <- lm(temp_rep$multiplicative_formula, data = temp_rep$data) # Multiplicative LM
@@ -192,6 +244,27 @@ for (i in 36:length(hainmueller)){
 }
 
 ################################################################################
+# Append Meta...
+################################################################################
+
+pai_runs <- list.files('hainmueller_replication/pai_runs', full.names = T)
+
+for (i in 1:length(pai_runs)){
+
+  temp_run <- get(load(pai_runs[i]))
+  temp_run_name <- gsub('.*\\/', '', gsub('\\.rdata', '', pai_runs[i]))
+  temp_run_meta <- hainmueller[[as.character(temp_run_name)]]$meta
+  temp_run$meta <- temp_run_meta
+  save(temp_run, file = pai_runs[i])
+
+  if (i %% 5 == 0){
+    message('Completed ', i, ' of ', length(pai_runs))
+  }
+
+} # Append Meta Info...
+
+
+################################################################################
 # PAI Diagnostics
 ################################################################################
 
@@ -202,6 +275,7 @@ source('R/pai_diagnostic.R') # Source PAI Diagnostic
 for (i in 1:length(pai_runs)){
 
   temp_run <- get(load(pai_runs[i]))
+  temp_run_meta <- temp_run$meta
   temp_run <- temp_run$run
   temp_pai_name <- gsub('.*pai_runs\\/', '', gsub('\\.rdata', '', pai_runs[i]))
 
@@ -314,6 +388,137 @@ for (i in 1:length(pai_runs)){
   } # Summary
 
   message(' --- Completed Summary')
+
+  {
+
+    temp_interaction <- c(temp_run_meta$D, temp_run_meta$X)
+    temp_full_data <- temp_run$parameters$full_data
+    D <- temp_interaction[1]
+    X <- temp_interaction[2]
+
+    compute_interaction_AME <- function(model, full_data, X, D,
+                                        quantiles = seq(0, 1, 0.1),
+                                        n_boot = 200, conf_level = 0.95) {
+      X <- as.character(X)
+      D <- as.character(D)
+
+      # Robust binary check
+      is_binary <- function(v) {
+        u <- unique(v[!is.na(v)])
+        # Accept numeric 0/1, logical TRUE/FALSE, or strings "0"/"1"
+        all_vals <- c(0, 1, TRUE, FALSE, "0", "1")
+        length(u) == 2 && all(u %in% all_vals)
+      }
+
+      X_binary <- is_binary(full_data[[X]])
+      D_binary <- is_binary(full_data[[D]])
+
+      # Debug prints
+      #cat("Unique values of D:\n")
+      #print(sort(unique(full_data[[D]])))
+      #cat("Is D binary? ", D_binary, "\n")
+
+      # Calculate delta for X if continuous
+      delta_X <- if (!X_binary) 0.1 * sd(full_data[[X]], na.rm = TRUE) else NA
+
+      get_ame <- function(data, d_val) {
+        data_low <- data
+        data_high <- data
+
+        # Set moderator D to fixed value
+        data_low[[D]] <- d_val
+        data_high[[D]] <- d_val
+
+        # Perturb X variable
+        if (X_binary) {
+          data_low[[X]] <- 0
+          data_high[[X]] <- 1
+        } else {
+          data_low[[X]] <- data_low[[X]] - delta_X
+          data_high[[X]] <- data_high[[X]] + delta_X
+        }
+
+        # Predict
+        pred_low <- predict(model, newdata = data_low)
+        pred_high <- predict(model, newdata = data_high)
+
+        # Handle classification: get probability for positive class
+        if (is.factor(pred_low) || is.matrix(pred_low)) {
+          pred_low <- predict(model, newdata = data_low, type = "prob")[, 2]
+          pred_high <- predict(model, newdata = data_high, type = "prob")[, 2]
+        }
+
+        mean(pred_high - pred_low, na.rm = TRUE)
+      }
+
+      # Get moderator values based on binary/continuous
+      if (D_binary) {
+        vals <- unique(na.omit(full_data[[D]]))
+        # Round numeric values to 0 or 1 to be safe (for floats like 0.999999)
+        if (is.numeric(vals)) {
+          vals <- sort(round(vals))
+        } else {
+          vals <- sort(vals)
+        }
+        d_vals <- vals
+      } else {
+        d_vals <- quantile(full_data[[D]], probs = quantiles, na.rm = TRUE)
+      }
+
+      results <- lapply(d_vals, function(d_val) {
+        point_est <- get_ame(full_data, d_val)
+
+        boot_vals <- replicate(n_boot, {
+          boot_data <- full_data[sample(nrow(full_data), replace = TRUE), ]
+          tryCatch(get_ame(boot_data, d_val), error = function(e) NA)
+        })
+
+        alpha <- 1 - conf_level
+        lower <- quantile(boot_vals, probs = alpha / 2, na.rm = TRUE)
+        upper <- quantile(boot_vals, probs = 1 - alpha / 2, na.rm = TRUE)
+
+        data.frame(D = d_val, AME_X = point_est, CI_lower = lower, CI_upper = upper)
+      })
+
+      result_df <- do.call(rbind, results)
+
+      if (!D_binary) {
+        # Add quantile names if continuous
+        result_df$Quantile <- names(d_vals)
+      }
+
+      rownames(result_df) <- NULL
+      return(result_df)
+    }
+
+
+    result <- compute_interaction_AME(
+      model = temp_run$declared_model,
+      full_data = temp_run$parameters$full_data,
+      X = temp_run_meta$X,
+      D = temp_run_meta$D
+    )
+
+
+  ame <- result %>%
+    ggplot(aes(x = D, y = AME_X)) +
+    geom_rect(aes(xmin = D - 0.01, xmax = D + 0.01, ymin = CI_lower, ymax = CI_upper), colour = 'black', fill = 'grey75') +
+    geom_point(size = 4, shape = 21, colour = 'black', fill = 'white') +
+    labs(x = paste0('\n', as.character(D), ' (D)'),
+         y = paste0(as.character(X), ' (X)\n')) +
+    theme_minimal() +
+    theme(panel.background = element_rect(size = 1, colour = 'black', fill = NA),
+          axis.text = element_text(size = 14, colour = 'black'),
+          axis.title = element_text(size = 16, colour = 'black'))
+
+
+  temp_diagnostic[['AME_interaction']] <- ame
+
+
+  } # Marginal Effects Interaction
+
+  message(' --- Completed AMEs from Interaction')
+
 
   temp_output_path <- file.path('hainmueller_replication', 'pai_diagnostics', paste0(temp_pai_name, '.rdata'))
   save(temp_diagnostic, file = temp_output_path)

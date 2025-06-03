@@ -383,6 +383,23 @@
                                               FE = c('gvkey', 'fyear'),
                                               data = 'rep_truex_2014b.dta')
 
+
+  ##############################################################################
+
+  Vernby_AJPS_2013 = list()
+  Vernby_AJPS_2013[['rep_vernby_2013a']] = list(Y="school.diff",
+                                                D="noncitvotsh",
+                                                X="noncit15",
+                                                Z=c("Taxbase2" ,  "Taxbase2.2" , "pop" , "pop.2" ,   "manu" , "manu.2"),
+                                                data = 'AJPSReplicationData.dta')
+
+
+  Vernby_AJPS_2013[['rep_vernby_2013b']] = list(Y="socialvard.diff",
+                                                D="noncitvotsh",
+                                                X="noncit5",
+                                                Z=c("Taxbase2" ,  "Taxbase2.2" , "pop" , "pop.2" ,   "manu" , "manu.2"),
+                                                data = 'AJPSReplicationData.dta')
+
   ##############################################################################
 
   Williams_CPS_2011 = list()
