@@ -396,134 +396,380 @@ for (i in 1:length(pai_runs)){
     D <- temp_interaction[1]
     X <- temp_interaction[2]
 
-    compute_interaction_AME <- function(model, full_data, X, D,
-                                        quantiles = seq(0, 1, 0.1),
-                                        n_boot = 200, conf_level = 0.95) {
-      X <- as.character(X)
-      D <- as.character(D)
+    {
 
-      # Robust binary check
-      is_binary <- function(v) {
-        u <- unique(v[!is.na(v)])
-        # Accept numeric 0/1, logical TRUE/FALSE, or strings "0"/"1"
-        all_vals <- c(0, 1, TRUE, FALSE, "0", "1")
-        length(u) == 2 && all(u %in% all_vals)
-      }
+      compute_interaction_AME <- function(model, full_data, D, X,
+                                          quantiles = seq(0, 1, 0.1),
+                                          n_boot = 100, conf_level = 0.95) {
+        D <- as.character(D)
+        X <- as.character(X)
 
-      X_binary <- is_binary(full_data[[X]])
-      D_binary <- is_binary(full_data[[D]])
+        is_binary <- function(v) {
+          u <- unique(v[!is.na(v)])
+          all_vals <- c(0, 1, TRUE, FALSE, "0", "1")
+          length(u) == 2 && all(u %in% all_vals)
+        }
 
-      # Debug prints
-      #cat("Unique values of D:\n")
-      #print(sort(unique(full_data[[D]])))
-      #cat("Is D binary? ", D_binary, "\n")
+        D_binary <- is_binary(full_data[[D]])
+        X_binary <- is_binary(full_data[[X]])
 
-      # Calculate delta for X if continuous
-      delta_X <- if (!X_binary) 0.1 * sd(full_data[[X]], na.rm = TRUE) else NA
+        delta_X <- if (!X_binary) 0.1 * sd(full_data[[X]], na.rm = TRUE) else NA
 
-      get_ame <- function(data, d_val) {
-        data_low <- data
-        data_high <- data
+        get_ame <- function(data, x_val) {
+          data_low <- data
+          data_high <- data
 
-        # Set moderator D to fixed value
-        data_low[[D]] <- d_val
-        data_high[[D]] <- d_val
+          # Set moderator X to fixed value
+          data_low[[X]] <- x_val
+          data_high[[X]] <- x_val
 
-        # Perturb X variable
+          # Perturb D (independent variable of interest)
+          if (D_binary) {
+            data_low[[D]] <- 0
+            data_high[[D]] <- 1
+          } else {
+            data_low[[D]] <- data_low[[D]] - delta_X
+            data_high[[D]] <- data_high[[D]] + delta_X
+          }
+
+          # Predict
+          pred_low <- predict(model, newdata = data_low)
+          pred_high <- predict(model, newdata = data_high)
+
+          # Classification handling
+          if (is.factor(pred_low) || is.matrix(pred_low)) {
+            pred_low <- predict(model, newdata = data_low, type = "prob")[, 2]
+            pred_high <- predict(model, newdata = data_high, type = "prob")[, 2]
+          }
+
+          mean(pred_high - pred_low, na.rm = TRUE)
+        }
+
+        # Get moderator values
         if (X_binary) {
-          data_low[[X]] <- 0
-          data_high[[X]] <- 1
+          vals <- unique(na.omit(full_data[[X]]))
+          if (is.numeric(vals)) {
+            vals <- sort(round(vals))
+          } else {
+            vals <- sort(vals)
+          }
+          x_vals <- vals
         } else {
-          data_low[[X]] <- data_low[[X]] - delta_X
-          data_high[[X]] <- data_high[[X]] + delta_X
+          x_vals <- quantile(full_data[[X]], probs = quantiles, na.rm = TRUE)
         }
 
-        # Predict
-        pred_low <- predict(model, newdata = data_low)
-        pred_high <- predict(model, newdata = data_high)
+        results <- lapply(x_vals, function(x_val) {
+          point_est <- get_ame(full_data, x_val)
 
-        # Handle classification: get probability for positive class
-        if (is.factor(pred_low) || is.matrix(pred_low)) {
-          pred_low <- predict(model, newdata = data_low, type = "prob")[, 2]
-          pred_high <- predict(model, newdata = data_high, type = "prob")[, 2]
-        }
+          boot_vals <- replicate(n_boot, {
+            boot_data <- full_data[sample(nrow(full_data), replace = TRUE), ]
+            tryCatch(get_ame(boot_data, x_val), error = function(e) NA)
+          })
 
-        mean(pred_high - pred_low, na.rm = TRUE)
-      }
+          alpha <- 1 - conf_level
+          lower <- quantile(boot_vals, probs = alpha / 2, na.rm = TRUE)
+          upper <- quantile(boot_vals, probs = 1 - alpha / 2, na.rm = TRUE)
 
-      # Get moderator values based on binary/continuous
-      if (D_binary) {
-        vals <- unique(na.omit(full_data[[D]]))
-        # Round numeric values to 0 or 1 to be safe (for floats like 0.999999)
-        if (is.numeric(vals)) {
-          vals <- sort(round(vals))
-        } else {
-          vals <- sort(vals)
-        }
-        d_vals <- vals
-      } else {
-        d_vals <- quantile(full_data[[D]], probs = quantiles, na.rm = TRUE)
-      }
-
-      results <- lapply(d_vals, function(d_val) {
-        point_est <- get_ame(full_data, d_val)
-
-        boot_vals <- replicate(n_boot, {
-          boot_data <- full_data[sample(nrow(full_data), replace = TRUE), ]
-          tryCatch(get_ame(boot_data, d_val), error = function(e) NA)
+          data.frame(X = x_val, AME_D = point_est, CI_lower = lower, CI_upper = upper)
         })
 
-        alpha <- 1 - conf_level
-        lower <- quantile(boot_vals, probs = alpha / 2, na.rm = TRUE)
-        upper <- quantile(boot_vals, probs = 1 - alpha / 2, na.rm = TRUE)
+        result_df <- do.call(rbind, results)
 
-        data.frame(D = d_val, AME_X = point_est, CI_lower = lower, CI_upper = upper)
-      })
+        if (!X_binary) {
+          result_df$Quantile <- names(x_vals)
+        }
 
-      result_df <- do.call(rbind, results)
-
-      if (!D_binary) {
-        # Add quantile names if continuous
-        result_df$Quantile <- names(d_vals)
+        rownames(result_df) <- NULL
+        return(result_df)
       }
 
-      rownames(result_df) <- NULL
-      return(result_df)
-    }
+
+      result <- compute_interaction_AME(
+        model = temp_run$declared_model,
+        full_data = temp_run$parameters$full_data,
+        D = temp_run_meta$D,  # D = treatment/independent variable
+        X = temp_run_meta$X   # X = moderator
+      )
 
 
-    result <- compute_interaction_AME(
-      model = temp_run$declared_model,
-      full_data = temp_run$parameters$full_data,
-      X = temp_run_meta$X,
-      D = temp_run_meta$D
-    )
+      ame <- result %>%
+        ggplot(aes(x = X, y = AME_D)) +
+        geom_rect(aes(xmin = X - 0.01, xmax = X + 0.01, ymin = CI_lower, ymax = CI_upper), colour = 'black', fill = 'grey75') +
+        geom_point(size = 4, shape = 21, colour = 'black', fill = 'white') +
+        labs(x = paste0('\n', as.character(X), ' (Moderator)'),
+             y = paste0(as.character(D), ' (Treatment)\n')) +
+        theme_minimal() +
+        theme(panel.background = element_rect(size = 1, colour = 'black', fill = NA),
+              axis.text = element_text(size = 14, colour = 'black'),
+              axis.title = element_text(size = 16, colour = 'black'))
+
+    } # AME (Quantiles)
+
+    {
+
+      compute_interaction_AME_SD <- function(model, full_data, D, X,
+                                             n_boot = 100, conf_level = 0.95) {
+        D <- as.character(D)
+        X <- as.character(X)
+
+        is_binary <- function(v) {
+          u <- unique(v[!is.na(v)])
+          all_vals <- c(0, 1, TRUE, FALSE, "0", "1")
+          length(u) == 2 && all(u %in% all_vals)
+        }
+
+        D_binary <- is_binary(full_data[[D]])
+        X_binary <- is_binary(full_data[[X]])
+
+        delta_X <- if (!D_binary) 0.1 * sd(full_data[[D]], na.rm = TRUE) else NA
+
+        get_ame <- function(data, x_val) {
+          data_low <- data
+          data_high <- data
+
+          # Fix moderator
+          data_low[[X]] <- x_val
+          data_high[[X]] <- x_val
+
+          # Perturb treatment
+          if (D_binary) {
+            data_low[[D]] <- 0
+            data_high[[D]] <- 1
+          } else {
+            data_low[[D]] <- data_low[[D]] - delta_X
+            data_high[[D]] <- data_high[[D]] + delta_X
+          }
+
+          # Predict
+          pred_low <- predict(model, newdata = data_low)
+          pred_high <- predict(model, newdata = data_high)
+
+          if (is.factor(pred_low) || is.matrix(pred_low)) {
+            pred_low <- predict(model, newdata = data_low, type = "prob")[, 2]
+            pred_high <- predict(model, newdata = data_high, type = "prob")[, 2]
+          }
+
+          mean(pred_high - pred_low, na.rm = TRUE)
+        }
+
+        # Moderator values
+        if (X_binary) {
+          x_vals <- sort(unique(na.omit(full_data[[X]])))
+        } else {
+          x_mean <- mean(full_data[[X]], na.rm = TRUE)
+          x_sd <- sd(full_data[[X]], na.rm = TRUE)
+          x_vals <- seq(x_mean - 2 * x_sd, x_mean + 2 * x_sd, length.out = 50)
+        }
+
+        results <- lapply(x_vals, function(x_val) {
+          point_est <- get_ame(full_data, x_val)
+
+          boot_vals <- replicate(n_boot, {
+            boot_data <- full_data[sample(nrow(full_data), replace = TRUE), ]
+            tryCatch(get_ame(boot_data, x_val), error = function(e) NA)
+          })
+
+          alpha <- 1 - conf_level
+          lower <- quantile(boot_vals, probs = alpha / 2, na.rm = TRUE)
+          upper <- quantile(boot_vals, probs = 1 - alpha / 2, na.rm = TRUE)
+
+          data.frame(X_value = x_val, AME_D = point_est, CI_lower = lower, CI_upper = upper)
+        })
+
+        result_df <- do.call(rbind, results)
+        rownames(result_df) <- NULL
+        return(result_df)
+      }
 
 
-  ame <- result %>%
-    ggplot(aes(x = D, y = AME_X)) +
-    geom_rect(aes(xmin = D - 0.01, xmax = D + 0.01, ymin = CI_lower, ymax = CI_upper), colour = 'black', fill = 'grey75') +
-    geom_point(size = 4, shape = 21, colour = 'black', fill = 'white') +
-    labs(x = paste0('\n', as.character(D), ' (D)'),
-         y = paste0(as.character(X), ' (X)\n')) +
-    theme_minimal() +
-    theme(panel.background = element_rect(size = 1, colour = 'black', fill = NA),
-          axis.text = element_text(size = 14, colour = 'black'),
-          axis.title = element_text(size = 16, colour = 'black'))
+      result_SD <- compute_interaction_AME_SD(model = temp_run$declared_model,
+                                              full_data = temp_run$parameters$full_data,
+                                              D = temp_run_meta$D,
+                                              X = temp_run_meta$X)
+
+      ame_SD <- result_SD %>%
+        ggplot(aes(x = X_value, y = AME_D)) +
+        geom_rect(aes(xmin = X_value - 0.01, xmax = X_value + 0.01, ymin = CI_lower, ymax = CI_upper), colour = 'black', fill = 'grey75') +
+        geom_point(size = 4, shape = 21, colour = 'black', fill = 'white') +
+        labs(x = paste0('\n', as.character(X), ' (Moderator)'),
+             y = paste0(as.character(D), ' (Treatment)\n')) +
+        theme_minimal() +
+        theme(panel.background = element_rect(size = 1, colour = 'black', fill = NA),
+              axis.text = element_text(size = 14, colour = 'black'),
+              axis.title = element_text(size = 16, colour = 'black'))
 
 
-  temp_diagnostic[['AME_interaction']] <- ame
+
+    } # AME (Standard Deviations)
+
+    {
+
+      x_distribution  <- temp_full_data %>%
+        select(temp_run_meta$X)
+
+      x_distribution_figure <- ggplot(aes(x = x_distribution[,1]), data = x_distribution) +
+        geom_density(fill = 'gray', colour = 'black', alpha = 1/2) +
+        geom_hline(yintercept = 0) +
+        geom_vline(xintercept = mean(x_distribution[,1]), linetype = 2, alpha = 1/2) +
+        labs(x = paste0('\n', as.character(X), ' (Moderator)'),
+             y = 'Density\n') +
+        theme_minimal() +
+        theme(panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
+              axis.text = element_text(size = 14, colour = 'black'),
+              axis.title = element_text(size = 16, colour = 'black'))
+
+
+
+    } # Distribution Re: Variable of Interest (D)
+
+    {
+      ame_combined <- ame +
+        labs(title = 'AME - Quantiles',
+             x = ' ') +
+        theme(plot.title = element_text(hjust = 0.5, face = 'bold'),
+              axis.title.y = element_text(face = 'bold', size = 12))
+
+      ame_SD_combined <- ame_SD +
+        labs(title = 'AME - Standard Deviations',
+             x = ' ',
+             y = ' ') +
+        theme(plot.title = element_text(hjust = 0.5, face = 'bold'),
+              axis.title = element_text(size = 14))
+
+      x_distribution_figure_combined <- x_distribution_figure +
+        labs(title = paste0('Distribution of ', as.character(X)),
+             x = paste0('\n', as.character(X), ' (Moderator)')) +
+        theme(plot.title = element_text(hjust = 0.5, face = 'bold'),
+              axis.title = element_text(size = 14),)
+
+      ame_combined_figure <- (ame_combined + ame_SD_combined) / x_distribution_figure_combined +
+        plot_layout(guides = 'collect', heights = c(2, 1)) +
+        theme(
+          axis.title.y = element_blank(),
+          axis.title.x = element_text(size = 12, colour = 'black', face = 'bold'),
+          plot.margin = ggplot2::margin(t = 5, r = 5, b = 20, l = 5)
+        )
+
+    } # Combined Figure
+
+    temp_diagnostic[['AME']] <- list()
+    temp_diagnostic$AME[['AME_quantiles']] <- ame
+    temp_diagnostic$AME[['AME_SD']] <- ame_SD
+    temp_diagnostic$AME[['X_distribution']] <- x_distribution_figure
+    temp_diagnostic$AME[['AME_combined']] <- ame_combined_figure
 
 
   } # Marginal Effects Interaction
 
   message(' --- Completed AMEs from Interaction')
 
-
   temp_output_path <- file.path('hainmueller_replication', 'pai_diagnostics', paste0(temp_pai_name, '.rdata'))
   save(temp_diagnostic, file = temp_output_path)
 
   message('Completed ', temp_pai_name, ' --- ', i, ' of ', length(pai_runs))
 
+} # Recover All Diagnostics
+
+
+pai_diagnostics <- list.files(file.path('hainmueller_replication', 'pai_diagnostics'), full.names = T)
+pai_runs <- list.files('hainmueller_replication/pai_runs', full.names = T)
+
+for (i in 1:length(pai_diagnostics)){
+
+  temp_diagnostic <- get(load(pai_diagnostics[i]))
+  temp_run <- get(load(pai_runs[i]))
+  temp_run_meta <- temp_run$meta
+  temp_full_data <- temp_run$run$parameters$full_data
+  temp_diagnostic_name <- gsub('.*\\/', '', gsub('\\.rdata', '', pai_diagnostics[i]))
+  temp_interaction <- c(temp_run_meta$D, temp_run_meta$X)
+  D <- temp_interaction[1]
+  X <- temp_interaction[2]
+
+  AME_quantiles <- temp_diagnostic$AME$AME_quantiles
+  AME_SD <- temp_diagnostic$AME$AME_SD
+
+
+  {
+
+    x_distribution  <- temp_full_data %>%
+      select(temp_run_meta$X)
+
+    x_distribution_figure <- ggplot(aes(x = x_distribution[,1]), data = x_distribution) +
+      geom_density(fill = 'gray', colour = 'black', alpha = 1/2) +
+      geom_hline(yintercept = 0) +
+      geom_vline(xintercept = mean(x_distribution[,1]), linetype = 2, alpha = 1/2) +
+      labs(x = paste0('\n', as.character(X), ' (Moderator)'),
+           y = 'Density\n') +
+      theme_minimal() +
+      theme(panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
+            axis.text = element_text(size = 14, colour = 'black'),
+            axis.title = element_text(size = 16, colour = 'black'))
+
+
+
+  } # Distribution Re: Variable of Interest (D)
+
+  {
+    ame_combined <- AME_quantiles +
+      labs(title = 'AME - Quantiles',
+           x = ' ') +
+      theme(plot.title = element_text(hjust = 0.5, face = 'bold'),
+            axis.title.y = element_text(face = 'bold', size = 12))
+
+    ame_SD_combined <- AME_SD +
+      labs(title = 'AME - Standard Deviations',
+           x = ' ',
+           y = ' ') +
+      theme(plot.title = element_text(hjust = 0.5, face = 'bold'),
+            axis.title = element_text(size = 14))
+
+    x_distribution_figure_combined <- x_distribution_figure +
+      labs(title = paste0('Distribution of ', as.character(X)),
+           x = paste0('\n', as.character(X), ' (Moderator)')) +
+      theme(plot.title = element_text(hjust = 0.5, face = 'bold'),
+            axis.title = element_text(size = 14),)
+
+    AME_combined <- (ame_combined + ame_SD_combined) / x_distribution_figure_combined +
+      plot_layout(guides = 'collect', heights = c(2, 1)) +
+      theme(
+        axis.title.y = element_blank(),
+        axis.title.x = element_text(size = 12, colour = 'black', face = 'bold'),
+        plot.margin = ggplot2::margin(t = 5, r = 5, b = 20, l = 5)
+      )
+
+  } # Combined Figure
+
+
+  temp_output_path <- file.path('hainmueller_replication/AME')
+
+  ggsave(AME_quantiles,
+         filename = file.path(temp_output_path, 'Quantiles', paste0(temp_diagnostic_name, '.png')),
+         width = 10,
+         height = 8,
+         units = 'in',
+         bg = 'white')
+
+  ggsave(AME_SD,
+         filename = file.path(temp_output_path, 'SD', paste0(temp_diagnostic_name, '.png')),
+         width = 10,
+         height = 8,
+         units = 'in',
+         bg = 'white')
+
+  ggsave(AME_combined,
+         filename = file.path(temp_output_path, 'Combined', paste0(temp_diagnostic_name, '.png')),
+         width = 12,
+         height = 8,
+         units = 'in',
+         bg = 'white')
+
+
+  if (i %% 5 == 0){
+    message('Completed ', i, ' of ', length(pai_diagnostics))
+  }
+
 }
 
+
+#https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/AO7IYJ
+# Gibson Replication

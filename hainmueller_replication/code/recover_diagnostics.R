@@ -74,5 +74,8 @@ temp_diagnostic$summary # Prints All Summary Info (May Be Different Beyond Perfo
 # Interaction Effect
 ###########################################
 
-temp_diagnostic$AME_interaction
+temp_diagnostic$AME$AME_quantiles
+temp_diagnostic$AME$AME_SD
+temp_diagnostic$AME$X_distribution
+temp_diagnostic$AME$AME_combined
 

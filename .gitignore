@@ -16,3 +16,8 @@ hainmueller_replication/pai_runs
 hainmueller_replication/pai_runs/
 hainmueller_replication/pai_diagnostics
 hainmueller_replication/pai_diagnostics/
+.hainmueller_replication
+.hainmueller_replication/
+hainmueller_replication/AME/
+hainmueller_replication/AME
+gibson_replication/
