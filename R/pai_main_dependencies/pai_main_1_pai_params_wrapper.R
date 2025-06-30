@@ -149,7 +149,7 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
 
   {
 
-    full_data <-  data
+    full_data <-  data[names(data) %in% c(parameters$outcome, parameters$factors, parameters$predictors)]
 
   } # Create Full Data
 

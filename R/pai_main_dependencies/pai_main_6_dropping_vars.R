@@ -8,7 +8,7 @@ dropping_vars <- function(parameters, output){
   if (parameters$list_drop_vars == 'FALSE'){
     {
       combinations <- data.frame() # Create Empty DF for Combinations of Drop Vars
-      vars_to_drop <- parameters$predictors
+      vars_to_drop <- c(parameters$predictors)
 
       for (drop_var in 1:length(vars_to_drop)){
 

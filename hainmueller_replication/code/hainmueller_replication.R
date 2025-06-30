@@ -112,7 +112,7 @@ load('hainmueller_replication/data/hainmueller_meta.rdata') # Load Hainmueller F
 
 output_folder <- file.path('hainmueller_replication', 'pai_runs')
 
-for (i in 40:length(hainmueller)){
+for (i in 1:length(hainmueller)){
 
   temp_rep <- hainmueller[[i]] # Grab Temp Rep
   temp_rep_name <- names(hainmueller[i]) # Get Temp Name
