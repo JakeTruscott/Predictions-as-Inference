@@ -1,7 +1,7 @@
 print_parameters <- function(parameters){
 
   message("\033[32m Model: \033[0m", "\033[38m", parameters$model, "\033[0m \n",
-          "\033[32m Outcome Variable: \033[0m", "\033[38m", parameters$outcome , "\033[0m \n",
+          "\033[32m Outcome Variable: \033[0m", "\033[38m", parameters$outcome , "\033[0m", ' (', parameters$outcome_type, ')'  ," \n",
           "\033[32m Predictors: \033[0m", "\033[38m " , ifelse(length(unique(parameters[['predictors']])) < 10, paste(parameters[['predictors']], collapse = " "), length(unique(parameters[['predictors']]))), " \033[0m \n",
           "\033[32m Factors: \033[0m", "\033[38m ",  ifelse(!is.null(parameters[['factors']]), paste(parameters[['factors']], collapse = " "), 'None'), " \033[0m \n")
 

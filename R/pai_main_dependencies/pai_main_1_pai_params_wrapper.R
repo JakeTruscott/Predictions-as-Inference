@@ -133,9 +133,6 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
 
       parameters[['factors']] <- unique(parameters[['factors']])
 
-      if (parameters[['outcome_type']] == 'Binomial'){
-        parameters[['factors']] <- c(parameters[['factors']], parameters$outcome)
-      } # Include DV if Binomial
 
 
     }
@@ -149,7 +146,12 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
 
     } else {
 
-      vars_to_check <- c(parameters[['factors']], names(parameters[['full_data']])[sapply(parameters[['full_data']], function(x) is.character(x) || is.factor(x))])
+      vars_to_check <- c(
+        parameters[['factors']],
+        names(parameters[['full_data']])[sapply(parameters[['full_data']], function(x) is.character(x) || is.factor(x))]
+      )
+
+      vars_to_check <- setdiff(vars_to_check, parameters[['outcome']]) # Remove DV
 
       sparse_values_check <- function(data){
         sparse_values_list <- list()
@@ -233,6 +235,10 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
     if (!is.null(sparse_check['factors'])){
       parameters[['sparse_factors']] <- c(parameters[['sparse_factors']], unname(unlist(sparse_check['factors'])))
       parameters[['sparse_factors']] <- unique(parameters[['sparse_factors']])
+      parameters[['sparse_factors']] <- setdiff(parameters[['sparse_factors']], parameters[['outcome']])
+      if (length(parameters[['sparse_factors']]) == 0){
+        parameters[['sparse_factors']] <- NULL
+      }
     }
 
     dv <- unlist(unname(sparse_check['outcome'][1])) #Get DV
@@ -262,8 +268,9 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
 
     } else {
 
-      parameters[['drop_vars']] <- parameters$drop_vars[!parameters$drop_vars %in% unlist(parameters$sparse_factors)] #Toss Sparse Factors from Drop Vars
-
+      parameters[['drop_vars']] <- parameters$drop_vars[
+        !parameters$drop_vars %in% c(unlist(parameters$sparse_factors), parameters$outcome)
+      ]
     }
 
 
