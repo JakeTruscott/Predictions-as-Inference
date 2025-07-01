@@ -1,20 +1,6 @@
 bootstrap_predictions_ci <- function(output, parameters){
 
   test_data = parameters$test_set #Grab Test Data
-
-  for (var in 1:ncol(test_data)){
-    temp_column <- data.frame(test_data[,var])
-    names(temp_column)[1] <- names(test_data[var])
-    colon_check <- gsub('\\.', ':', names(test_data[var]))
-    asterisk_check <- gsub('\\.', '*', names(test_data[var]))
-    if (colon_check %in% unlist(parameters$interactions)){
-      names(test_data)[var] <- colon_check
-    }
-    if (asterisk_check %in% unlist(parameters$interactions)){
-      names(test_data)[var] = asterisk_check
-    }
-  } #Fix bootstrap Column Names
-
   outcome_variable = parameters[['outcome']] #Set Outcome Var
 
   original_predictions <- predict(output$declared_model, newdata = test_data) #Get Base Predictions

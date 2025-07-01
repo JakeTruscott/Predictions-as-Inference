@@ -6,9 +6,10 @@ dropping_vars <- function(parameters, output){
   vars_to_drop <- c() #Initialize Empty Object for Vars to Drop (Based on Params Declaration)
 
   if (parameters$list_drop_vars == 'FALSE'){
+
     {
       combinations <- data.frame() # Create Empty DF for Combinations of Drop Vars
-      vars_to_drop <- c(parameters$predictors)
+      vars_to_drop <- c(parameters$predictors, parameters$factors)
 
       for (drop_var in 1:length(vars_to_drop)){
 
@@ -16,35 +17,20 @@ dropping_vars <- function(parameters, output){
         temp_drop_var <- vars_to_drop[drop_var]
         other_vars <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)]
 
-
-        other_vars <- other_vars[!grepl('(\\*|\\:)', other_vars)]
-        other_vars <- ifelse(other_vars %in% unlist(parameters$factors), paste0('factor(', other_vars, ')'), other_vars)
-        other_interactions <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)]
-        other_interactions <- other_interactions[grepl('(\\*|\\:)', other_interactions)]
-        other_cleaned_interactions <- c()
-        if(!is.null(other_interactions)){
-          for (interaction in other_interactions){
-            temp_interaction <- c()
-            terms <- unlist(stringr::str_split(interaction, pattern = '(\\*|\\:)'))
-            interaction_pattern <- ifelse(grepl('\\*', interaction), '*', ':')
-            for (term in terms){
-              term <- ifelse(term %in% unlist(parameters$factors), paste0('factor(', term, ')'), term)
-              temp_interaction <- c(temp_interaction, term)
-            } # For Each Term in Interaction
-            temp_interaction <- paste(temp_interaction, collapse = interaction_pattern)
-            other_cleaned_interactions <- c(other_cleaned_interactions, temp_interaction)
-          } #For Each Interaction - Separate + Add if factor() if Factor & Recombine
-        } #If 'other_interactions' isn't empty
-        other_vars <- c(other_vars, other_cleaned_interactions) #Combine All Vars Back Into Single Object
-
         if (length(other_vars) == 0) {
           message("\033[37m           Insufficient Variables in Group: \033[0m", current_var, '...Moving On') # Print Update
           next
         }
 
-        outcome_variable <- ifelse(parameters$outcome_type == 'Binomial', paste0('factor(', parameters$outcome, ')'), parameters$outcome) # Add factor() to outcome_var if Binomially Distributed
 
-        temp_combination <- paste0(outcome_variable, '~', paste(other_vars, collapse = '+'))
+        if (parameters[['outcome_type']] == 'Binomial'){
+          temp_combination <- paste0('factor(', parameters$outcome,') ~', paste(other_vars, collapse = '+'))
+        } else {
+
+          temp_combination <- paste0(parameters$outcome, '~', paste(other_vars, collapse = '+'))
+
+        }
+
 
         temp_combination <- data.frame(
           temp_combination = temp_combination,
@@ -70,23 +56,6 @@ dropping_vars <- function(parameters, output){
         other_vars <- parameters$predictors[!parameters$predictors %in% unlist(temp_drop_var)] #Retrieve Other Vars
         other_vars <- other_vars[!grepl(paste(temp_drop_var, collapse = "|"), other_vars)] #Further Remove if Temp Var in Interaction
         other_vars <- ifelse(other_vars %in% unlist(parameters$factors), paste0('factor(', other_vars, ')'), other_vars)
-        other_interactions <- vars_to_drop[!vars_to_drop %in% unlist(temp_drop_var)]
-        other_interactions <- other_interactions[grepl('(\\*|\\:)', other_interactions)]
-        other_cleaned_interactions <- c()
-        if(!is.null(other_interactions)){
-          for (interaction in other_interactions){
-            temp_interaction <- c()
-            terms <- unlist(stringr::str_split(interaction, pattern = '(\\*|\\:)'))
-            interaction_pattern <- ifelse(grepl('\\*', interaction), '*', ':')
-            for (term in terms){
-              term <- ifelse(term %in% unlist(parameters$factors), paste0('factor(', term, ')'), term)
-              temp_interaction <- c(temp_interaction, term)
-            } # For Each Term in Interaction
-            temp_interaction <- paste(temp_interaction, collapse = interaction_pattern)
-            other_cleaned_interactions <- c(other_cleaned_interactions, temp_interaction)
-          } #For Each Interaction - Separate + Add if factor() if Factor & Recombine
-        } #If 'other_interactions' isn't empty
-        other_vars <- unique(c(other_vars, other_cleaned_interactions)) #Combine All Vars Back Into Single Object
 
         if (length(other_vars) == 0) {
           message("\033[37m           Insufficient Variables in Group: \033[0m", current_var, '...Moving On') # Print Update

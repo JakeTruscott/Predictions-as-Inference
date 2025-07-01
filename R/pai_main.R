@@ -26,7 +26,6 @@ pai <- function(data, #Data
                 model = NULL, #Caret Model
                 outcome = NULL, #DV
                 predictors = NULL, #IVs
-                #interactions = NULL, #Interactive Terms
                 factors = NULL, # Factor Terms
                 drop_vars = NULL, #Defaults to All
                 save_drop_var_models = FALSE, # Defaults to FALSE

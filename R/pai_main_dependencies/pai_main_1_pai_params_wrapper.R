@@ -1,109 +1,69 @@
 pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_vars, save_drop_var_models, cores, placebo_iterations, folds, train_split, drop_sparse_vars, sparse_variable_threshold, custom_tc, outcome_type, assign_factors, list_drop_vars, seed){
 
-  parameters <- list()
-
   {
 
     parameters <- list()
+    `%||%` <- function(a, b) if (!is.null(a)) a else b
 
-    if(is.null(data)){
-      message("\033[31m Error: No Data Declared! \033[0m")
+    # --- Data Check ---
+    if (is.null(data)) {
+      message("\033[31mError: No Data Declared!\033[0m")
       stop()
     }
 
-    if (is.null(model)){
-      parameters[['model']] <- 'parRF'
-    } else {
-      parameters[['model']] <- model
-    } #Declare Model from Caret
+    # --- Model ---
+    parameters[['model']] <- if (is.null(model)) 'parRF' else model
 
-    if (is.null(outcome)){
-      stop('No Outcome Variable Declared \n Try Again')
-    } else {
-      parameters[['outcome']] <- outcome
-    } # Declare Outcome (DV)
+    # --- Outcome Variable ---
+    if (is.null(outcome)) stop('No Outcome Variable Declared\nTry Again')
+    parameters[['outcome']] <- outcome
 
-    if (is.null(predictors)){
-      parameters[['predictors']] <- c(names(data)[!names(data) %in% parameters[['outcome']]])
+    # --- Predictors ---
+    parameters[['predictors']] <- if (is.null(predictors)) {
+      setdiff(names(data), outcome)
     } else {
-      parameters[['predictors']] <- c(predictors)
-    } # Declare Predictors
-
-    if (is.null(drop_vars)){
-      parameters[['drop_vars']] <- c(parameters[['predictors']])
-    } else {
-      parameters[['drop_vars']] <- c(drop_vars)
-    } # Declare Variables to Drop
-
-    if (is.null(cores)){
-      parameters[['cores']] <- 1
-    } else {
-      parameters[['cores']] <- as.numeric(cores)
-    } #Cores
-
-    if (is.null(placebo_iterations)){
-      parameters[['placebo_iterations']] <- 10
-    } else {
-      parameters[['placebo_iterations']] <- as.numeric(placebo_iterations)
-    } #Placebo Iterations
-
-    if (is.null(folds)){
-      parameters[['folds']] <- 5
-    } else {
-      parameters[['folds']] <- as.numeric(folds)
-    } #K-Folds
-
-    if (is.null(train_split)){
-      parameters[['train_split']] <- 80
-    } else {
-      parameters[['train_split']] <- as.numeric(train_split)
-    } # Train/Test Split
-
-    if (custom_tc == FALSE){
-      parameters[['custom_tc']] <- 'FALSE'
-    } else {
-      parameters[['custom_tc']] <- 'TRUE'
-    } #Custom Train Control
-
-    if (is.null(factors)){
-      parameters[['factors']] <- NULL
-    } else {
-      parameters[['factors']] <- c(factors)
-    } # Assign Initial Factors
-
-    if (is.null(assign_factors)){
-      parameters[['assign_factors']] <- NULL
-    } else {
-      parameters[['assign_factors']] <- as.numeric(assign_factors)
-    } #Assign Factor Floor (Default to 4)
-
-    if(drop_sparse_vars == FALSE){
-      parameters[['drop_sparse_vars']] <- FALSE
-    } else {
-      parameters[['drop_sparse_vars']] <- TRUE
+      predictors
     }
 
-    parameters[['save_drop_var_models']] <- save_drop_var_models # Save Drop Var Models (True/False -- Defaults to FALSE)
-
-    if (is.null(sparse_variable_threshold)){
-      parameters[['sparse_variable_threshold']] <- NULL
+    # --- Drop Variables ---
+    parameters[['drop_vars']] <- if (is.null(drop_vars)) {
+      parameters[['predictors']]
     } else {
-      parameters[['sparse_variable_threshold']] <- sparse_variable_threshold
+      drop_vars
     }
 
-    parameters[['list_drop_vars']] <- list_drop_vars
+    # --- Cores ---
+    parameters[['cores']] <- if (is.null(cores)) 1 else as.numeric(cores)
 
-    if (list_drop_vars == FALSE){
-      parameters[['drop_vars']] <- c(parameters$drop_vars)
-    } else {
+    # --- Placebo Iterations ---
+    parameters[['placebo_iterations']] <- if (is.null(placebo_iterations)) 10 else as.numeric(placebo_iterations)
+
+    # --- K-Folds ---
+    parameters[['folds']] <- if (is.null(folds)) 5 else as.numeric(folds)
+
+    # --- Train/Test Split ---
+    parameters[['train_split']] <- if (is.null(train_split)) 80 else as.numeric(train_split)
+
+    # --- Custom Train Control ---
+    parameters[['custom_tc']] <- as.character(custom_tc %||% FALSE)
+
+    # --- Factor Variables ---
+    parameters[['factors']] <- if (is.null(factors)) NULL else factors
+    parameters[['assign_factors']] <- if (is.null(assign_factors)) NULL else as.numeric(assign_factors)
+
+    # --- Sparse Variable Handling ---
+    parameters[['drop_sparse_vars']] <- isTRUE(drop_sparse_vars)
+    parameters[['save_drop_var_models']] <- isTRUE(save_drop_var_models)
+    parameters[['sparse_variable_threshold']] <- sparse_variable_threshold %||% NULL
+
+    # --- Drop Vars List Option ---
+    parameters[['list_drop_vars']] <- isTRUE(list_drop_vars)
+    if (isTRUE(list_drop_vars)) {
       parameters[['drop_vars']] <- drop_vars
-    } #Drop Vars - List vs. Identified
+    }
 
-    if (is.null(seed)){
-      parameters[['seed']] <- 1234
-    } else {
-      parameters[['seed']] <- as.numeric(seed)
-    } #Seed
+    # --- Seed ---
+    parameters[['seed']] <- if (is.null(seed)) 1234 else as.numeric(seed)
 
   } #Parameter Declaration
 
@@ -149,25 +109,33 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
 
   {
 
-    full_data <-  data[names(data) %in% c(parameters$outcome, parameters$factors, parameters$predictors)]
+    full_data_vars <- unlist(Filter(function(x) !is.null(x) && !all(is.na(x)),
+                                    list(parameters$outcome, parameters$factors, parameters$predictors)))
+    parameters[['full_data']] <- data[, names(data) %in% full_data_vars]
+
 
   } # Create Full Data
 
   {
 
-    factors <- parameters[['factors']]
 
     if (!is.null(assign_factors)){
 
-      for (i in ncol(full_data)){
+      for (i in ncol(parameters[['full_data']])){
 
-        temp_column <- full_data[,i]
-        temp_column_name <- names(full_data[i])
+        temp_column <- parameters[['full_data']][,i]
+        temp_column_name <- names(parameters[['full_data']][i])
         unique_values <- length(unique(temp_column))
         if (unique_values <= assign_factors){
-          factors <- c(factors, temp_column_name)
+          parameters[['factors']] <- c(parameters[['factors']], temp_column_name)
         }
       }
+
+      parameters[['factors']] <- unique(parameters[['factors']])
+
+      if (parameters[['outcome_type']] == 'Binomial'){
+        parameters[['factors']] <- c(parameters[['factors']], parameters$outcome)
+      } # Include DV if Binomial
 
 
     }
@@ -177,11 +145,11 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
   {
 
     if (is.null(parameters$sparse_variable_threshold)){
-      full_data <- full_data
+      parameters[['full_data']] <- parameters[['full_data']]
 
     } else {
 
-      vars_to_check <- c(factors, names(full_data)[sapply(full_data, function(x) is.character(x) || is.factor(x))])
+      vars_to_check <- c(parameters[['factors']], names(parameters[['full_data']])[sapply(parameters[['full_data']], function(x) is.character(x) || is.factor(x))])
 
       sparse_values_check <- function(data){
         sparse_values_list <- list()
@@ -200,8 +168,8 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
         return(sparse_values_list)
 
       } # Function to Check Sparse Factor Variables & Fix
-      rare_values <- sparse_values_check(full_data) # Plug Full Data
-      for (var in names(full_data)) {
+      rare_values <- sparse_values_check(parameters[['full_data']]) # Plug Full Data
+      for (var in names(parameters[['full_data']])) {
 
         if (!var %in% names(rare_values)) {
           next
@@ -209,16 +177,16 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
 
         values_to_amend <- rare_values[[var]]
 
-        if (is.factor(full_data[[var]])) {
+        if (is.factor(parameters[['full_data']][[var]])) {
 
-          full_data[[var]] <- as.character(full_data[[var]])  # Convert factor to character
+          parameters[['full_data']][[var]] <- as.character(parameters[['full_data']][[var]])  # Convert factor to character
 
-          full_data[[var]][full_data[[var]] %in% values_to_amend] <- 888  # Replace values
+          parameters[['full_data']][[var]][parameters[['full_data']][[var]] %in% values_to_amend] <- 888  # Replace values
 
-          full_data[[var]] <- factor(full_data[[var]])  # Convert back to factor
+          parameters[['full_data']][[var]] <- factor(parameters[['full_data']][[var]])  # Convert back to factor
         } else {
 
-          full_data[[var]][full_data[[var]] %in% values_to_amend] <- 888 # Replace values in character or numeric vectors
+          parameters[['full_data']][[var]][parameters[['full_data']][[var]] %in% values_to_amend] <- 888 # Replace values in character or numeric vectors
         }
       } # Fix Sparse Factors -- Replace with '888'
 
@@ -230,16 +198,20 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
 
   {
 
-    parameters['full_data'] <- list(full_data)
+    if (!is.null(parameters[['factors']])){
+      parameters[['full_data']] <- parameters[['full_data']] %>%
+        mutate(across(any_of(parameters[['factors']]), as.factor)) # Convert Factors to Factor in full_data
+    }
 
-  } # Create Full Data
+
+  } # Convert Factors to Factor in Full Data --> Then Train/test Split
 
   {
 
-    train_index <- createDataPartition(y = full_data[[parameters[['outcome']]]], p = 0.8, list = FALSE)[, 1]
+    train_index <- createDataPartition(y = parameters[['full_data']][[parameters[['outcome']]]], p = 0.8, list = FALSE)[, 1]
 
-    train_set <- full_data[train_index, ] #Split Train
-    test_set <- full_data[-train_index, ] #Split Test
+    train_set <- parameters[['full_data']][train_index, ] #Split Train
+    test_set <- parameters[['full_data']][-train_index, ] #Split Test
     parameters[['train_index']] <- train_index
     parameters[['train_set']] <- list(train_set)
     parameters[['test_set']] <- list(test_set)
@@ -253,55 +225,25 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
     sparse_check <- sparse_variable_check(parameters) #Check Sparse Nature & Assign Factor
 
     if (!is.null(sparse_check$sparse_factors)) {
-      parameters$sparse_factors <- sparse_check$sparse_factors
+      parameters[['sparse_factors']] <- sparse_check$sparse_factors
     } #Update Sparse Factors (If Needed)
 
-    non_factors <- unname(unlist(sparse_check['non-factors'])) #Get Non-Factors
+    parameters[['non_factors']] <- unname(unlist(sparse_check['non-factors'])) #Get Non-Factors
 
     if (!is.null(sparse_check['factors'])){
-      factors <- c(factors, unname(unlist(sparse_check['factors'])))
+      parameters[['sparse_factors']] <- c(parameters[['sparse_factors']], unname(unlist(sparse_check['factors'])))
+      parameters[['sparse_factors']] <- unique(parameters[['sparse_factors']])
     }
 
     dv <- unlist(unname(sparse_check['outcome'][1])) #Get DV
     sparse_factors <- unlist(unname(sparse_check['sparse_factors'])) #Get Sparse Factors
-    factors <- factors[!factors %in% dv] #Remove DV
     if (parameters$drop_sparse_vars == TRUE){
-      factors <- factors[!factors %in% unlist(sparse_factors)]
+      parameters[['sparse_factors']] <- parameters[['sparse_factors']][!parameters[['sparse_factors']]%in% unlist(sparse_factors)]
     }
-    non_factors <- non_factors[!non_factors %in% c(unlist(sparse_factors), factors)]
-
-    parameters[['non_factors']] <- non_factors #Put Non-Factors in parameters
-    parameters[['factors']] <- factors #Same for factors
-    parameters[['sparse_factors']] <- sparse_factors
-
-    if (!is.null(parameters[['factors']])){
-
-      for (factor_term in 1:length(parameters[['factors']])){
-        temp_factor_term <- parameters[['factors']][factor_term]
-
-        train_set[[as.character(temp_factor_term)]] <- factor(train_set[[as.character(temp_factor_term)]])
-        test_set[[as.character(temp_factor_term)]] <- factor(test_set[[as.character(temp_factor_term)]])
-        full_data[[as.character(temp_factor_term)]] <- factor(full_data[[as.character(temp_factor_term)]])
-
-      }
-
-    } # Convert Factors to Factor in Data
-
-    if (!is.null(parameters[['sparse_factors']])){
-
-      for (factor_term in 1:length(parameters[['sparse_factors']])){
-        temp_factor_term <- parameters[['sparse_factors']][factor_term]
-
-        train_set[[as.character(temp_factor_term)]] <- factor(train_set[[as.character(temp_factor_term)]])
-        test_set[[as.character(temp_factor_term)]] <- factor(test_set[[as.character(temp_factor_term)]])
-        full_data[[as.character(temp_factor_term)]] <- factor(full_data[[as.character(temp_factor_term)]])
-
-      }
-
-    } # Convert Sparse Factors to Factor in Data
+    parameters[['non_factors']] <- parameters[['non_factors']][!parameters[['non_factors']] %in% c(parameters$sparse_factors, parameters[['factors']])]
 
 
-    formula_vars <- c(non_factors, factors) #Create Single Formula Vars (No Interactions Yet...)
+    formula_vars <- c(parameters[['factors']], parameters[['non_factors']]) #Create Single Formula Vars
     formula_vars <- formula_vars[!formula_vars %in% dv]
     formula_vars <- unique(formula_vars)
 
@@ -347,9 +289,7 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
 
   {
 
-    dv <- ifelse(parameters$outcome_type == 'Binomial', paste0('factor(', outcome, ')'), outcome) #Get DV
-
-    parameters[['base_formula']] <- paste0(dv, '~', paste(formula_vars[!is.na(formula_vars)], collapse = "+")) #Create Formula
+    parameters[['base_formula']] <- paste0(outcome, '~', paste(formula_vars[!is.na(formula_vars)], collapse = "+")) #Create Formula
 
 
   } #Create Formula (+ Message for What Was Tossed b/c Sparse)

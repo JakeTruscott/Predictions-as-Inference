@@ -2,11 +2,7 @@ placebo_shuffle <- function(declared_model, parameters, output){
 
   placebos <- data.frame() # Initialize Empty DF
 
-  if(is.null(parameters$interactions)){
-    variables <- c(unlist(parameters$predictors))
-  } else {
-    variables <- c(unlist(parameters$predictors), unlist(parameters$interactions))
-  }  # Get Variables
+  variables <- c(parameters$predictors, parameters$factors)
 
   true_values <- parameters$test_set[parameters$outcome][,1] #Set Real Data
   test_data <- parameters$test_set
@@ -74,23 +70,13 @@ placebo_shuffle <- function(declared_model, parameters, output){
         shuffle_data <- parameters$test_set #Get Test Data
         temp_var <- variables[var]
 
-        vars_to_shuffle <- c(temp_var, unlist(stringr::str_split(temp_var, pattern = '(\\*|\\:)'))) #Get All Vars (Including Interactions w/ Vars)
+        vars_to_shuffle <- c(temp_var) #Get All Vars (Including Interactions w/ Vars)
         vars_to_shuffle <- vars_to_shuffle[!grepl('(\\*|\\:)', vars_to_shuffle)] #Shuffle Stand-Alone Vars -- Recompile Interactions
         interaction_vars <- variables[grepl('(\\*|\\:)', variables)] #Grab Interaction Terms from variables vector
 
         for (var_name in vars_to_shuffle) {
           shuffle_data[[var_name]] <- sample(shuffle_data[[var_name]])
         } #Shuffle Any & All Vars Included in Shuffle
-
-        if (!length(interaction_vars) == 0) {
-          if (!is.null(interaction_vars)){
-            for (interaction in 1:length(interaction_vars)){
-              t <- interaction_vars[[interaction]][[1]]
-              t <- stringr::str_split(t, pattern = '(\\:|\\*)')[[1]]
-              shuffle_data[interaction_vars[interaction]] <- apply(shuffle_data[, t], 1, prod)
-            }
-          }
-        } # For Interaction Vars, Reconfigure After Shuffling Stand-Alone Terms
 
         shuffled_predictions <- predict(output$declared_model, newdata = shuffle_data, na.action = na.pass) # Predict using the shuffled data
 

@@ -23,3 +23,5 @@ hainmueller_replication/AME
 gibson_replication/
 hainmueller_replication/
 hall_replication/
+.replications/
+replications/
