@@ -187,11 +187,11 @@ pai_diagnostic <- function(output){
         process_variable <- function(var_index) {
           tryCatch({
             temp_dat <- data.frame(push_data[[variables[var_index]]])
-            temp_dat <- temp_dat[, c(1, 3)] # Step & ACC
-            names(temp_dat) <- c('steps', 'accuracy')
+            temp_dat <- temp_dat[, c(1, 2)] # Step & Pred/Prob
+            names(temp_dat) <- c('steps', 'pred')
             temp_dat$steps <- as.numeric(temp_dat$steps)
 
-            lm_temp <- lm(accuracy ~ steps, data = temp_dat)
+            lm_temp <- lm(pred ~ steps, data = temp_dat)
             ci_temp <- predict(lm_temp, interval = "confidence")
             temp_dat <- cbind(temp_dat, ci_temp)
 
@@ -212,17 +212,17 @@ pai_diagnostic <- function(output){
               )) %>%
               unique()
 
-            temp_figure_stand_alone <- ggplot(temp_dat, aes(x = steps, y = accuracy)) +
+            temp_figure_stand_alone <- ggplot(temp_dat, aes(x = steps, y = pred)) +
               geom_point(colour = 'gray5', alpha = 1/4) +
-              stat_smooth(aes(colour = 'Linear Fit\n(w/ 95% CI)'), method = "lm", se = FALSE, linetype = 'solid', size = 1) +
+              stat_smooth(aes(colour = 'Linear Fit\n(w/ 95% CI)', linetype = 'Linear Fit\n(w/ 95% CI)'), method = "lm", formula = y ~ x,  se = FALSE, size = 1) +
               geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0, colour = 'gray5') +
-              stat_smooth(aes(colour = 'Loess Fit\n(w/ SE)'), method = "loess", se = TRUE, linetype = 'dashed', size = 1) +
+              stat_smooth(aes(colour = 'Loess Fit\n(w/ SE)', linetype = 'Loess Fit\n(w/ SE)'), method = "loess", formula = y ~ x, se = TRUE, size = 1) +
               theme_minimal() +
               scale_color_manual(values = c('Linear Fit\n(w/ 95% CI)' = 'gray5', 'Loess Fit\n(w/ SE)' = 'red')) +
               scale_linetype_manual(values = c('Linear Fit\n(w/ 95% CI)' = 'solid', 'Loess Fit\n(w/ SE)' = 'dashed')) +
               labs(
                 x = paste0('\n', as.character(variables[var_index])),
-                y = 'Accuracy\n',
+                y = ifelse(output$parameters$outcome_type == 'Continuous', 'Prediction\n', paste0('p(', output$parameters$outcome, '= 1)\n') ),
                 color = 'Fit Type',
                 linetype = 'Fit Type'
               ) +
@@ -258,8 +258,8 @@ pai_diagnostic <- function(output){
         process_static_bins <- function(var_index) {
           tryCatch({
             temp_dat <- data.frame(push_data[[variables[var_index]]])
-            temp_dat <- temp_dat[, c(1, 3)]
-            names(temp_dat) <- c('steps', 'accuracy')
+            temp_dat <- temp_dat[, c(1, 2)]
+            names(temp_dat) <- c('steps', 'pred')
 
             temp_dat$steps <- as.numeric(temp_dat$steps)
             num_bins <- bins
@@ -278,7 +278,7 @@ pai_diagnostic <- function(output){
 
             for (b in unique_bins) {
               temp_bin <- temp_dat[temp_dat$bin == b,]
-              lm_bin_temp <- suppressWarnings(lm(accuracy ~ steps, data = temp_bin))
+              lm_bin_temp <- suppressWarnings(lm(pred ~ steps, data = temp_bin))
 
               summary_lm <- suppressWarnings(summary(lm_bin_temp))
               slope <- coef(summary_lm)[2]
@@ -307,18 +307,24 @@ pai_diagnostic <- function(output){
 
             temp_dat <- cbind(temp_dat, ci_temp)
 
-            temp_figure_stand_alone <- ggplot(temp_dat, aes(x = steps, y = accuracy)) +
+            temp_figure_stand_alone <- ggplot(temp_dat, aes(x = steps, y = pred)) +
               geom_point(colour = 'gray5', alpha = 1/4) +
               geom_vline(aes(xintercept = cut), linetype = 2, alpha = 1/3) +
-              stat_smooth(aes(colour = 'Linear Fit\n(w/ 95% CI)', group = bin), method = "lm", se = FALSE, linetype = 'solid', size = 1) +
               geom_errorbar(aes(ymin = ci.lwr, ymax = ci.upr), width = 0, colour = 'gray5') +
-              stat_smooth(aes(colour = 'Loess Fit\n(w/ SE)'), method = "loess", se = TRUE, linetype = 'dashed', size = 1) +
+              stat_smooth(
+                aes(colour = 'Linear Fit\n(w/ 95% CI)', linetype = 'Linear Fit\n(w/ 95% CI)', group = bin),
+                method = "lm", se = FALSE, formula = y ~ x, size = 1
+              ) +
+              stat_smooth(
+                aes(colour = 'Loess Fit\n(w/ SE)', linetype = 'Loess Fit\n(w/ SE)'),
+                method = "loess", se = TRUE, formula = y ~ x, size = 1
+              ) +
               theme_minimal() +
               scale_color_manual(values = c('Linear Fit\n(w/ 95% CI)' = 'gray5', 'Loess Fit\n(w/ SE)' = 'red')) +
               scale_linetype_manual(values = c('Linear Fit\n(w/ 95% CI)' = 'solid', 'Loess Fit\n(w/ SE)' = 'dashed')) +
               labs(
                 x = paste0('\n', as.character(variables[var_index])),
-                y = 'Accuracy\n',
+                y = ifelse(output$parameters$outcome_type == 'Continuous', 'Prediction\n', paste0('p(', output$parameters$outcome, '= 1)\n') ),
                 color = 'Fit Type',
                 linetype = 'Fit Type'
               ) +
@@ -355,8 +361,8 @@ pai_diagnostic <- function(output){
         process_rolling_bins <- function(var_index) {
           tryCatch({
             temp_dat <- data.frame(push_data[[variables[var_index]]])
-            temp_dat <- temp_dat[, c(1, 3)]
-            names(temp_dat) <- c('steps', 'accuracy')
+            temp_dat <- temp_dat[, c(1, 2)]
+            names(temp_dat) <- c('steps', 'pred')
 
             temp_dat$steps <- as.numeric(temp_dat$steps)
             num_bins <- bins
@@ -410,7 +416,7 @@ pai_diagnostic <- function(output){
 
             for (b in unique_bins) {
               temp_bin <- t[t$bin_cut_id == b, ]
-              lm_bin_temp <- suppressWarnings(lm(accuracy ~ steps, data = temp_bin))
+              lm_bin_temp <- suppressWarnings(lm(pred ~ steps, data = temp_bin))
 
               summary_lm <- suppressWarnings(summary(lm_bin_temp))
               slope <- coef(summary_lm)[2]
@@ -447,19 +453,29 @@ pai_diagnostic <- function(output){
             temp_dat$bin_cut_group <- paste0(temp_dat$bin_cut_group, temp_dat$slope, temp_dat$sig)
             temp_dat$bin_cut_group <- factor(temp_dat$bin_cut_group, levels = unique(temp_dat$bin_cut_group))
 
-            temp_figure_stand_alone <- ggplot(temp_dat, aes(x = steps, y = accuracy)) +
+            temp_figure_stand_alone <- ggplot(temp_dat, aes(x = steps, y = pred)) +
               geom_point(colour = 'gray5', alpha = 1/4) +
-              stat_smooth(aes(colour = 'Linear Fit\n(w/ 95% CI)', group = bin_cut_id), data = temp_dat, method = "lm", se = FALSE, linetype = 'solid', size = 1) +
+              stat_smooth(
+                aes(
+                  colour = 'Linear Fit\n(w/ 95% CI)',
+                  linetype = 'Linear Fit\n(w/ 95% CI)',
+                  group = bin_cut_id), method = "lm",  se = TRUE, formula = y~x, size = 1) +
               geom_errorbar(aes(ymin = ci.lwr, ymax = ci.upr), width = 0, colour = 'gray5') +
-              stat_smooth(aes(colour = 'Loess Fit\n(w/ SE)'), method = "loess", se = TRUE, linetype = 'dashed', size = 1) +
-              facet_wrap(~bin_cut_group, scales = 'free_x') +
+              stat_smooth(aes(
+                  colour = 'Loess Fit\n(w/ SE)',
+                  linetype = 'Loess Fit\n(w/ SE)'), method = "loess",  se = TRUE, formula = y~x, size = 1) +
+              facet_wrap(~bin_cut_group, scales = 'free') +
               geom_vline(aes(xintercept = cut), linetype = 2, alpha = 1/3) +
               theme_minimal() +
-              scale_color_manual(values = c('Linear Fit\n(w/ 95% CI)' = 'gray5', 'Loess Fit\n(w/ SE)' = 'red')) +
-              scale_linetype_manual(values = c('Linear Fit\n(w/ 95% CI)' = 'solid', 'Loess Fit\n(w/ SE)' = 'dashed')) +
+              scale_color_manual(values = c(
+                'Linear Fit\n(w/ 95% CI)' = 'gray5',
+                'Loess Fit\n(w/ SE)' = 'red' )) +
+              scale_linetype_manual(values = c(
+                'Linear Fit\n(w/ 95% CI)' = 'solid',
+                'Loess Fit\n(w/ SE)' = 'dashed')) +
               labs(
                 x = paste0('\n', as.character(variables[var_index])),
-                y = 'Accuracy\n',
+                y = ifelse(output$parameters$outcome_type == 'Continuous', 'Prediction\n', paste0('p(', output$parameters$outcome, '= 1)\n') ),
                 color = 'Fit Type',
                 linetype = 'Fit Type'
               ) +
@@ -498,8 +514,8 @@ pai_diagnostic <- function(output){
         process_rolling_extended_bins <- function(var_index) {
           tryCatch({
             temp_dat <- data.frame(push_data[[variables[var_index]]])
-            temp_dat <- temp_dat[, c(1, 3)]
-            names(temp_dat) <- c('steps', 'accuracy')
+            temp_dat <- temp_dat[, c(1, 2)]
+            names(temp_dat) <- c('steps', 'pred')
 
             temp_dat$steps <- as.numeric(temp_dat$steps)
             num_bins <- bins
@@ -546,7 +562,7 @@ pai_diagnostic <- function(output){
 
             for (b in unique_bins) {
               temp_bin <- t[t$bin_cut_id == b,]
-              lm_bin_temp <- suppressWarnings(lm(accuracy ~ steps, data = temp_bin))
+              lm_bin_temp <- suppressWarnings(lm(pred ~ steps, data = temp_bin))
 
               summary_lm <- suppressWarnings(summary(lm_bin_temp))
               slope <- coef(summary_lm)[2]
@@ -576,7 +592,6 @@ pai_diagnostic <- function(output){
 
             temp_dat <- cbind(t, ci_temp)
 
-            # Join slope info for labels and factors
             temp_dat$bin_cut_group <- bin_cut_match$bin_group[match(temp_dat$bin_cut_id, bin_cut_match$bin_cut_id)]
             temp_dat$bin_range <- bin_cut_match$bin_range[match(temp_dat$bin_cut_id, bin_cut_match$bin_cut_id)]
             temp_dat$slope <- slope_temp$slope[match(temp_dat$bin_range, slope_temp$bin)]
@@ -584,23 +599,33 @@ pai_diagnostic <- function(output){
             temp_dat$bin_cut_group <- paste0(temp_dat$bin_cut_group, temp_dat$slope, temp_dat$sig)
             temp_dat$bin_cut_group <- factor(temp_dat$bin_cut_group, levels = unique(temp_dat$bin_cut_group))
 
-            # Plot
-            temp_figure_stand_alone <- ggplot(temp_dat, aes(x = steps, y = accuracy)) +
+            temp_figure_stand_alone <- ggplot(temp_dat, aes(x = steps, y = pred)) +
               geom_point(colour = 'gray5') +
-              stat_smooth(aes(colour = 'Linear Fit\n(w/ 95% CI)', group = bin_cut_id), data = temp_dat, method = "lm", se = FALSE, linetype = 'solid', size = 1) +
+              stat_smooth(
+                aes(
+                  colour = 'Linear Fit\n(w/ 95% CI)',
+                  linetype = 'Linear Fit\n(w/ 95% CI)',
+                  group = bin_cut_id
+                ),  data = temp_dat, method = "lm", se = FALSE, formula = y~x, size = 1) +
               geom_errorbar(aes(ymin = ci.lwr, ymax = ci.upr), width = 0, colour = 'gray5') +
-              stat_smooth(aes(colour = 'Loess Fit\n(w/ SE)'), method = "loess", se = TRUE, linetype = 'dashed', size = 1) +
-              facet_wrap(~bin_cut_group, scales = 'free_x') +
+              stat_smooth(
+                aes(
+                  colour = 'Loess Fit\n(w/ SE)',
+                  linetype = 'Loess Fit\n(w/ SE)'), method = "loess", se = TRUE, formula = y~x,  size = 1) +
+              facet_wrap(~bin_cut_group, scales = 'free_y') +
               geom_vline(aes(xintercept = cut), linetype = 2, alpha = 1/3) +
               theme_minimal() +
-              scale_color_manual(values = c('Linear Fit\n(w/ 95% CI)' = 'gray5', 'Loess Fit\n(w/ SE)' = 'red')) +
-              scale_linetype_manual(values = c('Linear Fit\n(w/ 95% CI)' = 'solid', 'Loess Fit\n(w/ SE)' = 'dashed')) +
+              scale_color_manual(values = c(
+                'Linear Fit\n(w/ 95% CI)' = 'gray5',
+                'Loess Fit\n(w/ SE)' = 'red')) +
+              scale_linetype_manual(values = c(
+                'Linear Fit\n(w/ 95% CI)' = 'solid',
+                'Loess Fit\n(w/ SE)' = 'dashed' )) +
               labs(
                 x = paste0('\n', as.character(variables[var_index])),
-                y = 'Accuracy\n',
+                y = ifelse(output$parameters$outcome_type == 'Continuous', 'Prediction\n', paste0('p(', output$parameters$outcome, '= 1)\n')),
                 color = 'Fit Type',
-                linetype = 'Fit Type'
-              ) +
+                linetype = 'Fit Type' ) +
               theme(
                 axis.text = element_text(size = 14),
                 axis.title = element_text(size = 16, face = 'bold'),
@@ -616,7 +641,9 @@ pai_diagnostic <- function(output){
                 strip.background = element_rect(fill = "gray", color = "gray5"),
                 plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
                 plot.subtitle = element_text(size = 15),
-                plot.caption = element_text(size = 12, hjust = 0, face = 'italic'))
+                plot.caption = element_text(size = 12, hjust = 0, face = 'italic')
+              )
+
 
             push_output$figures$rolling_extended[[variables[var_index]]] <<- temp_figure_stand_alone
             push_output$slope_tables$rolling_extended[[variables[var_index]]] <<- slope_temp

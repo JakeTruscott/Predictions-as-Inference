@@ -2,13 +2,7 @@ push <- function(output, parameters){
 
   output <- output
 
-  predictors <- parameters$predictors
-  interactions <- parameters$interactions
-  if (!is.null(interactions)){
-    variables <- c(predictors, interactions)
-  } else {
-    variables <- predictors
-  } #Get Variables - Include Interactions (If Declared) and Assign Factor Labels (If Needed)
+  variables <- parameters$predictors # Get Variables
 
   push_output <- list() #Initialize List for Output
 
@@ -44,14 +38,11 @@ push <- function(output, parameters){
                              var = temp_var,
                              stepper = temp_step,
                              Z = data,
-                             outcome_type = parameters$outcome_type,
-                             outcome_var = parameters$outcome,
-                             parameters = parameters) #Calculate for Step[step]
+                             outcome_type = parameters$outcome_type)
 
       temp_pred <- data.frame(
         step = temp_step,
-        onecount = temp_pred[1],
-        acc = temp_pred[2]) #Put Output in Temp DF
+        prediction = temp_pred) #Put Output in Temp DF
 
       var_push_predictions <- dplyr::bind_rows(var_push_predictions, temp_pred)
 
