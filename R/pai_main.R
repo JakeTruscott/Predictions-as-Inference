@@ -37,7 +37,7 @@ pai <- function(data, #Data
                 drop_sparse_vars = TRUE,
                 sparse_variable_threshold = NULL, # Total Number of Observations Required For Factor Value[x] (If Below Threshold, Will Default to 888)
                 custom_tc = FALSE, #Defaults to Basic TC (3 Repeats, Assigned K-Folds, etc.)
-                assign_factors = 5, #Defaults to 5 - Change to Any Number
+                assign_factors = F, # Defaults to F -- IF True, Converts all Character, Factor, and Integer Values to Factor
                 list_drop_vars = FALSE, #Defaults to FALSE
                 seed = NULL #Defaults to 1234
 ){
@@ -81,6 +81,32 @@ pai <- function(data, #Data
   output[['parameters']] <- parameters #Add Parameters to Output Object
 
   print_parameters(parameters) #Print Parameters
+
+  {
+
+    sparse_rows <- data.frame()
+
+    if (!is.null(parameters$train_test_variable_lengths$length)) {
+      valid_lengths <- parameters$train_test_variable_lengths$length
+      valid_lengths <- valid_lengths[!is.na(valid_lengths)]
+
+      sparse_rows <- parameters$train_test_variable_lengths[
+        parameters$train_test_variable_lengths$length %in% c(0, 1),
+      ]
+    } else {
+      sparse_rows <- parameters$train_test_variable_lengths[0, , drop = FALSE]
+    }
+
+    if (!nrow(sparse_rows) == 0){
+
+      message('\033[31m Warning: \033[0m', 'Insufficient Levels Located in Train (Test) Set: \n')
+      print(sparse_rows)
+      message('\n')
+     # stop('Check Sparse Variable Threshold to Ensure Necessary Variance in n(Levels) Prior to Caret Compilation')
+    }
+
+
+  } # Check for Sparse Variables in Train/Test -- If Yes, Will Stop and Print MEssage
 
   message("Initializing Parallel Environment with \033[37m", cores, " Core(s) \033[0m") #Print Update
 

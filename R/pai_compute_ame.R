@@ -7,6 +7,7 @@
 #' @param n_boot Number of bootstrap iterations
 #' @param conf_level Confidence Level
 #' @param quantiles Sequence of quantiles
+#' @param round_vals Numeric integer to round quantiles and SD values
 #'
 #' @return
 #' @export
@@ -47,7 +48,7 @@ compute_interaction_AME <- function(model,
         if (is_binary_or_factor(x)) {
           sort(unique(x))
         } else {
-          unique(quantile(x, probs = quantiles, na.rm = TRUE))
+          round(sort(unique(quantile(x, probs = quantiles, na.rm = TRUE))), 2)
         }
       }
 
@@ -72,8 +73,14 @@ compute_interaction_AME <- function(model,
         }
 
         if (D_binary) {
-          data_low[[D]] <- 0
-          data_high[[D]] <- 1
+          D_levels <- levels(full_data[[D]])
+          if (is.factor(full_data[[D]])) {
+            data_low[[D]] <- factor(D_levels[1], levels = D_levels)
+            data_high[[D]] <- factor(D_levels[2], levels = D_levels)
+          } else {
+            data_low[[D]] <- 0
+            data_high[[D]] <- 1
+          }
         } else {
           data_low[[D]] <- data_low[[D]] - delta_D
           data_high[[D]] <- data_high[[D]] + delta_D
@@ -147,11 +154,10 @@ compute_interaction_AME <- function(model,
           mean_val <- mean(x)
           sd_val <- sd(x)
           seq_vals <- seq(mean_val - 2 * sd_val, mean_val + 2 * sd_val, length.out = 10)
-          vals <- pmin(pmax(seq_vals, min_val), max_val)
+          vals <- round(pmin(pmax(seq_vals, min_val), max_val), 2)
         }
 
-        vals <- round(vals, digits = 3)
-        unique(vals)
+        sort(unique(vals))
       }
 
       mod_vals <- lapply(moderators, get_vals)
@@ -175,8 +181,14 @@ compute_interaction_AME <- function(model,
         }
 
         if (D_binary) {
-          data_low[[D]] <- 0
-          data_high[[D]] <- 1
+          D_levels <- levels(full_data[[D]])
+          if (is.factor(full_data[[D]])) {
+            data_low[[D]] <- factor(D_levels[1], levels = D_levels)
+            data_high[[D]] <- factor(D_levels[2], levels = D_levels)
+          } else {
+            data_low[[D]] <- 0
+            data_high[[D]] <- 1
+          }
         } else {
           data_low[[D]] <- data_low[[D]] - delta_D
           data_high[[D]] <- data_high[[D]] + delta_D
@@ -222,34 +234,60 @@ compute_interaction_AME <- function(model,
     }
 
 
-    x_distribution <- function(full_data,
-                               moderators){
-
+    x_distribution <- function(full_data, moderators) {
       x_distribution_figures <- list()
 
-      for (i in 1:length(moderators)){
+      for (i in seq_along(moderators)) {
 
-        x_distribution <- full_data %>%
-          select(moderators[i])
-        x_distribution_figure <- ggplot(aes(x = x_distribution[,1]), data = x_distribution) +
-          geom_density(fill = 'gray', colour = 'black', alpha = 1/2) +
-          geom_hline(yintercept = 0) +
-          geom_vline(xintercept = mean(x_distribution[,1]), linetype = 2, alpha = 1/2) +
-          labs(x = paste0('\n', as.character(X), ' (Moderator)'),
-               y = 'Density\n') +
-          theme_minimal() +
-          theme(panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
-                axis.text = element_text(size = 14, colour = 'black'),
-                axis.title = element_text(size = 16, colour = 'black'))
+        mod_var <- moderators[i]
+        mod_values <- full_data[[mod_var]]
 
+        if (is.factor(mod_values) || is.character(mod_values)) {
+          mod_values <- as.factor(mod_values)
+          full_data[[mod_var]] <- as.numeric(mod_values)
+          level_labels <- levels(mod_values)
 
-        x_distribution_figures[[as.character(moderators[i])]] <- x_distribution_figure
+          # If Factor or Character, Convert to Numeric but Store Original Value for Label
 
+          x_distribution <- full_data %>%
+            select(all_of(mod_var)) %>%
+            rename(value = all_of(mod_var))
+
+          x_distribution_figure <- ggplot(x_distribution, aes(x = value)) +
+            geom_density(fill = 'gray', colour = 'black', alpha = 1/2) +
+            geom_hline(yintercept = 0) +
+            scale_x_continuous(
+              breaks = seq_along(level_labels),
+              labels = level_labels
+            ) +
+            labs(x = paste0('\n', mod_var, ' (Moderator)'), y = 'Density\n') +
+            theme_minimal() +
+            theme(panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
+                  axis.text = element_text(size = 14, colour = 'black'),
+                  axis.title = element_text(size = 16, colour = 'black'))
+
+        } else {
+          x_distribution <- full_data %>%
+            select(all_of(mod_var)) %>%
+            rename(value = all_of(mod_var)) # If Continuous Var -- Proceed Normally
+
+          x_distribution_figure <- ggplot(x_distribution, aes(x = value)) +
+            geom_density(fill = 'gray', colour = 'black', alpha = 1/2) +
+            geom_hline(yintercept = 0) +
+            geom_vline(xintercept = mean(x_distribution$value, na.rm = TRUE), linetype = 2, alpha = 1/2) +
+            labs(x = paste0('\n', mod_var, ' (Moderator)'), y = 'Density\n') +
+            theme_minimal() +
+            theme(panel.border = element_rect(linewidth = 1, colour = 'black', fill = NA),
+                  axis.text = element_text(size = 14, colour = 'black'),
+                  axis.title = element_text(size = 16, colour = 'black'))
+        }
+
+        x_distribution_figures[[mod_var]] <- x_distribution_figure
       }
 
       return(x_distribution_figures)
-
     }
+
 
   } # AME Quantiles & SD Functions (+ X-distribution Function)
 
@@ -272,7 +310,7 @@ compute_interaction_AME <- function(model,
         } else {
           as.character(.[[1]])
         },
-        x_numeric = as.numeric(factor(type))
+        x_numeric = as.numeric(sort(factor(type)))
       )
 
     ame_sd_figure <-  ame_sd_output %>%
@@ -315,7 +353,7 @@ compute_interaction_AME <- function(model,
         } else {
           as.character(.[[1]])
         },
-        x_numeric = as.numeric(factor(type))
+        x_numeric = sort(as.numeric(factor(type)))
       )
 
     ame_quantiles_figure <- ame_quantiles_output %>%
@@ -352,3 +390,5 @@ compute_interaction_AME <- function(model,
 
 
 }
+
+

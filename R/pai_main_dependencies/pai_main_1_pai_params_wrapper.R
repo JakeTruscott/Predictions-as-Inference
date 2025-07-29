@@ -49,7 +49,7 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
 
     # --- Factor Variables ---
     parameters[['factors']] <- if (is.null(factors)) NULL else factors
-    parameters[['assign_factors']] <- if (is.null(assign_factors)) NULL else as.numeric(assign_factors)
+    parameters[['assign_factors']] <- ifelse(assign_factors == TRUE, TRUE, FALSE)
 
     # --- Sparse Variable Handling ---
     parameters[['drop_sparse_vars']] <- isTRUE(drop_sparse_vars)
@@ -118,15 +118,15 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
 
   {
 
+    if (assign_factors == TRUE){
 
-    if (!is.null(assign_factors)){
+      temp_additional_factors <-
 
-      for (i in ncol(parameters[['full_data']])){
+      for (i in 1:ncol(parameters[['full_data']])){
 
         temp_column <- parameters[['full_data']][,i]
         temp_column_name <- names(parameters[['full_data']][i])
-        unique_values <- length(unique(temp_column))
-        if (unique_values <= assign_factors){
+        if (is.factor(temp_column) || is.integer(temp_column)) {
           parameters[['factors']] <- c(parameters[['factors']], temp_column_name)
         }
       }
@@ -134,8 +134,8 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
       parameters[['factors']] <- unique(parameters[['factors']])
 
 
-
     }
+
 
   } # Assign Factors
 
@@ -300,6 +300,34 @@ pai_params_wrapper <- function(data, model, factors, outcome, predictors, drop_v
 
 
   } #Create Formula (+ Message for What Was Tossed b/c Sparse)
+
+  {
+
+    parameters[['train_test_variable_lengths']] <- list()
+    variable_lengths <- data.frame()
+
+    for (i in 1:ncol(parameters$train_set)){
+      temp_column <- parameters$train_set[,i]
+      temp_length <- length(unique(temp_column))
+      temp_length <- data.frame(variable = names(parameters$train_set)[i],
+                                length = temp_length,
+                                source = 'train_set')
+      variable_lengths <- bind_rows(variable_lengths, temp_length)
+    }
+
+    for (i in 1:ncol(parameters$test_set)){
+      temp_column <- parameters$test_set[,i]
+      temp_length <- length(unique(temp_column))
+      temp_length <- data.frame(variable = names(parameters$test_set)[i],
+                                length = temp_length,
+                                source = 'test_set')
+      variable_lengths <- bind_rows(variable_lengths, temp_length)
+    }
+
+    parameters[['train_test_variable_lengths']] <- variable_lengths
+
+  } # Sparsity Check (Makes Sure There's No Single-Level Variables in Train or Test)
+
 
   return(parameters)
 
